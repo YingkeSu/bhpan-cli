@@ -1,0 +1,42 @@
+{
+  "name": "bhpan-cli",
+  "version": "0.1.0",
+  "description": "CLI and interactive shell for BUAA AnyShare cloud drive",
+  "type": "module",
+  "bin": {
+    "bhpan": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node ./scripts/build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "start": "node --experimental-transform-types ./src/main.ts",
+    "shell": "node --experimental-transform-types ./src/main.ts shell",
+    "check": "npm run typecheck && node --experimental-transform-types ./src/main.ts --help",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run check && npm run build"
+  },
+  "keywords": [
+    "buaa",
+    "anyshare",
+    "cloud-drive",
+    "cli",
+    "shell"
+  ],
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "devDependencies": {
+    "@types/node": "^24.6.1",
+    "esbuild": "^0.25.10",
+    "typescript": "^5.9.3"
+  },
+  "license": "MIT"
+}
