@@ -1,6 +1,6 @@
 # 开发状态
 
-最后更新：2026-03-17 23:12 CST
+最后更新：2026-03-17 23:22 CST
 
 ## 当前总结
 
@@ -8,10 +8,19 @@
 - 这是一个以 CLI / 本地工具为主、同时带 AnyShare 远程 API 集成的项目；当前最值得信任的是认证、目录解析、基础文件管理和小文件传输主链。
 - 当前最值得继续推进的是体验和验证深度，而不再是协议主阻塞。分享链接匿名/实名链路都已接到 CLI，并完成真实账号回归。
 - 当前已经补齐 npm 发布形态：可构建、可打包、可从 tarball 直接全局安装并执行真实命令。
-- 当前已经完成公开发布基础设施：
-  - GitHub 仓库已建立
-  - `v0.1.0` GitHub release 已建立
-  - `bhpan-cli@0.1.0` 已发布到 npm
+- 当前已经完成公开发布：
+  - GitHub 仓库已建立：`https://github.com/YingkeSu/bhpan-cli`
+  - GitHub release 已建立：`v0.1.0`、`v0.1.1`
+  - npm 包已发布：`bhpan-cli@0.1.0`、`bhpan-cli@0.1.1`
+- 当前正在准备 `0.1.2`
+  - 这是一个 README / presentation patch release
+  - 目标是让 GitHub 与 npm 页面更像对外 README，而不是开发者工作说明
+- 当前公开最新版本是 `0.1.1`
+  - `0.1.0` 是首个公开可用版本，并已做真实 tarball 安装与真实站点命令回归
+  - `0.1.1` 是 metadata patch release，没有运行时功能变更
+- 当前包名决策是继续保留未 scoped 的 `bhpan-cli`
+  - 原因是名字已占用成功、安装命令短、且当前没有必须迁移到 `@scope/package` 的组织化需求
+  - 如果以后迁移到 scoped package，应视为新包并采用双发/迁移提示，而不是直接硬切
 
 ## 已完成工作
 
@@ -61,7 +70,18 @@
   - `CHANGELOG.md`
   - `LICENSE`
   - `.gitignore`
-  - `v0.1.0` release notes
+  - `v0.1.0` / `v0.1.1` release notes
+- 已完成公开发布与元数据补齐：
+  - GitHub 仓库创建并推送 `main`
+  - GitHub release `v0.1.0`
+  - GitHub release `v0.1.1`
+  - npm 发布 `bhpan-cli@0.1.0`
+  - npm 发布 `bhpan-cli@0.1.1`
+  - npm 元数据已补齐 `repository` / `homepage` / `bugs` / `author`
+- 当前这一轮新增：
+  - 面向公开用户重写 `README.md`
+  - 新增 `v0.1.2` release notes
+  - `package.json` / CLI 版本已推进到 `0.1.2`
 
 ## 当前命令覆盖
 
@@ -101,11 +121,23 @@
 - `npm run check` 通过
 - `npm run build` 通过
 - `npm pack` 通过
+- `npm pack --dry-run` 通过
 - `node --experimental-transform-types ./src/main.ts --version` 正常输出
 - `help` / `--help` 正常输出
 - `node ./dist/main.js --help` 正常输出
 - 从 `bhpan-cli-0.1.0.tgz` 全局安装后，`bhpan --version` 正常输出
 - 从 `bhpan-cli-0.1.0.tgz` 全局安装后，`bhpan ls /home` 可访问真实站点
+- `0.1.1` 发布前检查通过：`npm run check`、`npm pack --dry-run`
+
+公开发布验证：
+
+- `gh release view v0.1.1 --repo YingkeSu/bhpan-cli` 返回正式 release，且附件 `bhpan-cli-0.1.1.tgz` 已上传
+- `npm view bhpan-cli name version dist-tags.latest repository.url homepage bugs.url` 返回：
+  - `version = 0.1.1`
+  - `dist-tags.latest = 0.1.1`
+  - `repository.url = git+https://github.com/YingkeSu/bhpan-cli.git`
+  - `homepage = https://github.com/YingkeSu/bhpan-cli#readme`
+  - `bugs.url = https://github.com/YingkeSu/bhpan-cli/issues`
 
 真实北航云盘联调：
 
@@ -162,9 +194,13 @@
   - 相比纯本地类型检查，这个项目更依赖真实 AnyShare 站点联调
   - 认证链、目录 API、对象存储上传下载链路应继续作为回归主线
 - 运行时前提
-- 当前运行方式依赖 Node 22
+  - 当前运行方式依赖 Node 22
   - 开发态入口命令使用 `node --experimental-transform-types`
   - 发布态入口命令为 npm 安装后的 `bhpan`
+- 包与分发身份
+  - 当前 npm 包名是未 scoped 的 `bhpan-cli`
+  - 当前 CLI 命令名是 `bhpan`
+  - 目前不建议迁移到 scoped package；未来如果确有组织化需求，应采用新包并行发布而非原地改名
 - API 集成边界
   - 这是一个 CLI 项目，但真实风险主要来自 AnyShare 线上协议漂移
   - 文档与线上行为不一致时，应优先相信真实联调结果
@@ -187,9 +223,9 @@
   - 递归目录上传下载
   - 异常中断恢复
   - `mv` / `cp` 的专项实盘回归
-- 外部发布仍有环境阻塞
-  - 当前机器没有 GitHub 登录态，无法直接创建仓库、push 或创建 GitHub release
-  - 当前机器没有 npm 登录态，无法直接执行 `npm publish`
+- 包名迁移当前不是阻塞，但属于未来决策点
+  - 当前未 scoped 包名 `bhpan-cli` 已经公开可用
+  - 如果未来决定迁移到 `@scope/bhpan-cli`，那会是一个新包发布与用户迁移问题，而不是一次普通版本升级
 
 ## 当前待办清单
 
@@ -233,6 +269,9 @@
 ## 关键文件
 
 - [README.md](/root/Programs/bhpan_cli/README.md)
+- [package.json](/root/Programs/bhpan_cli/package.json)
+- [CHANGELOG.md](/root/Programs/bhpan_cli/CHANGELOG.md)
+- [docs/releases/v0.1.1.md](/root/Programs/bhpan_cli/docs/releases/v0.1.1.md)
 - [src/main.ts](/root/Programs/bhpan_cli/src/main.ts)
 - [src/shell.ts](/root/Programs/bhpan_cli/src/shell.ts)
 - [src/client.ts](/root/Programs/bhpan_cli/src/client.ts)
@@ -246,6 +285,18 @@
 
 ```bash
 node --experimental-transform-types ./src/main.ts ls /home
+```
+
+确认 npm 公开状态：
+
+```bash
+npm view bhpan-cli name version dist-tags.latest repository.url homepage bugs.url
+```
+
+确认 GitHub release：
+
+```bash
+gh release view v0.1.1 --repo YingkeSu/bhpan-cli
 ```
 
 内部 E2E 验证示例：

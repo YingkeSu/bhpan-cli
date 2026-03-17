@@ -5,7 +5,7 @@ import { takeBooleanFlag, takeFlag, takeIntegerFlag, takeLinkTypeFlag, takeNumbe
 import { loadConfig, saveConfig } from "./config.ts";
 import { PanShell, printList, printStat } from "./shell.ts";
 
-const VERSION = "0.1.1";
+const VERSION = "0.1.2";
 
 function printHelp(): void {
   console.log(`bhpan

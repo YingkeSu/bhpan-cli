@@ -1,28 +1,54 @@
 # bhpan-cli
 
-`bhpan-cli` 是一个面向北航云盘（AnyShare）的 Node.js 命令行工具，提供单次 CLI 与交互式 shell 两种使用方式。
+[![npm version](https://img.shields.io/npm/v/bhpan-cli)](https://www.npmjs.com/package/bhpan-cli)
+[![npm downloads](https://img.shields.io/npm/dm/bhpan-cli)](https://www.npmjs.com/package/bhpan-cli)
+[![GitHub release](https://img.shields.io/github/v/release/YingkeSu/bhpan-cli)](https://github.com/YingkeSu/bhpan-cli/releases)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+`bhpan-cli` 是一个面向北航云盘（AnyShare）的非官方命令行工具，提供：
 
 - 单次 CLI：适合脚本、SSH、自动化任务
 - 交互式 shell：适合日常手工浏览和文件操作
 
-项目基于 `xdedss/dist_bhpan` 与 `Fucov/PanCLI` 的思路重写，当前实现为 TypeScript + Node 22，并已经针对北航当前线上站点完成真实联调。
+它基于早期的 `dist_bhpan` 与 `PanCLI` 思路重写，目标不是简单移植，而是做一个结构更清晰、能直接安装、并且已经对当前北航线上站点做过真实联调的 TypeScript 版本。
 
 ## 项目链接
 
 - GitHub: <https://github.com/YingkeSu/bhpan-cli>
 - npm: <https://www.npmjs.com/package/bhpan-cli>
-- Release: <https://github.com/YingkeSu/bhpan-cli/releases/tag/v0.1.1>
+- Releases: <https://github.com/YingkeSu/bhpan-cli/releases>
+
+## 为什么用它
+
+- 直接安装：`npm install -g bhpan-cli`
+- 直接使用：安装后命令就是 `bhpan`
+- 同时支持脚本化调用和交互式 shell
+- 已适配北航当前 OAuth2 / Hydra 登录链路
+- 已完成真实账号联调，不是只在本地做静态实现
 
 ## 当前版本
 
-- 版本：`0.1.1`
-- Node 要求：`>= 22`
+- 版本：`0.1.2`
+- 运行时：Node `>= 22`
 - npm 包名：`bhpan-cli`
 - CLI 命令：`bhpan`
 
-## 已验证能力
+## 功能概览
 
-以下能力已经用真实北航账号做过联调：
+当前已实现：
+
+- 登录、登出、身份查看
+- 路径解析与 `/home` 别名
+- `ls`、`tree`、`stat`
+- `mkdir`、`rm`
+- `mv`、`cp`
+- `cat`、`head`、`tail`
+- `touch`
+- 上传、下载
+- 匿名分享与实名分享
+- 单次 CLI 与交互式 shell
+
+当前已经用真实北航账号做过联调的主链包括：
 
 - OAuth2 登录与 token 刷新
 - `/home` 路径解析
@@ -34,13 +60,6 @@
 - 匿名分享 `link create/show/delete`
 - 实名分享 `link create/show/delete`
 - 同一路径下多分享并存时的 `link show` 与 `link delete --type all`
-
-当前仍建议继续补实盘回归的部分：
-
-- `mv` / `cp`
-- 大文件上传下载
-- 递归目录传输
-- 异常中断恢复
 
 ## 安装
 
@@ -56,18 +75,11 @@ npm install -g bhpan-cli
 npx bhpan-cli --help
 ```
 
-安装后直接使用：
+安装完成后：
 
 ```bash
 bhpan --help
 bhpan --version
-```
-
-如果你只是本地开发，也可以直接运行源码：
-
-```bash
-npm install
-npm run start -- --help
 ```
 
 ## 快速开始
@@ -77,8 +89,6 @@ npm run start -- --help
 ```bash
 bhpan login --username <你的学号>
 ```
-
-默认会提示输入密码，并把加密后的凭据与 token 缓存在本地配置目录中。
 
 查看主页目录：
 
@@ -110,7 +120,7 @@ bhpan
 bhpan shell
 ```
 
-## 命令概览
+## 常用命令
 
 ```text
 bhpan shell
@@ -133,7 +143,13 @@ bhpan upload <local_path> <remote_dir>
 bhpan download <remote_path> [local_dir]
 ```
 
-## 常见示例
+完整说明请直接运行：
+
+```bash
+bhpan --help
+```
+
+## 示例
 
 列目录：
 
@@ -181,6 +197,21 @@ bhpan link show /home/code/report.pdf
 bhpan link delete /home/code/report.pdf --type all
 ```
 
+## 已知边界
+
+当前仍建议继续补实盘回归的部分：
+
+- `mv` / `cp`
+- 大文件上传下载
+- 递归目录传输
+- 异常中断恢复
+
+体验层面仍待继续增强的部分：
+
+- `tree` 的更细过滤与统计输出
+- 更丰富的分享参数
+- shell 命令补全与更强的错误提示
+
 ## 配置与数据位置
 
 Linux:
@@ -198,7 +229,14 @@ Windows:
 - 配置：`%APPDATA%\\bhpan\\config.json`
 - 数据：`%LOCALAPPDATA%\\bhpan\\`
 
-## 反馈与发布
+## 隐私与说明
+
+- 这是非官方工具，不代表北航或 AnyShare 官方
+- 仅适用于本身就拥有北航云盘访问权限的用户
+- 登录后会把配置写到本地配置目录
+- 如选择保存密码，保存的是加密后的本地凭据与缓存 token
+
+## 反馈与状态
 
 - 问题反馈：<https://github.com/YingkeSu/bhpan-cli/issues>
 - 发布记录：[CHANGELOG.md](./CHANGELOG.md)
@@ -230,8 +268,9 @@ npm run build
 npm pack
 ```
 
-## 发布说明
+## 致谢
 
-当前发布产物是标准 npm CLI 包，安装后直接得到 `bhpan` 可执行命令，不再依赖 `node --experimental-transform-types`。
+本项目的设计与协议适配过程中参考了以下上游项目：
 
-本次发布对应的说明见 [docs/releases/v0.1.1.md](./docs/releases/v0.1.1.md)；首个公开版本说明见 [docs/releases/v0.1.0.md](./docs/releases/v0.1.0.md)。
+- <https://github.com/xdedss/dist_bhpan>
+- <https://github.com/Fucov/PanCLI>

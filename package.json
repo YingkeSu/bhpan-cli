@@ -1,7 +1,7 @@
 {
   "name": "bhpan-cli",
-  "version": "0.1.1",
-  "description": "CLI and interactive shell for BUAA AnyShare cloud drive",
+  "version": "0.1.2",
+  "description": "Unofficial BUAA AnyShare cloud drive CLI and interactive shell",
   "author": "YingkeSu",
   "homepage": "https://github.com/YingkeSu/bhpan-cli#readme",
   "bugs": {
@@ -31,8 +31,11 @@
     "prepublishOnly": "npm run check && npm run build"
   },
   "keywords": [
+    "bhpan",
     "buaa",
+    "beihang",
     "anyshare",
+    "anyshare-cli",
     "cloud-drive",
     "cli",
     "shell"
