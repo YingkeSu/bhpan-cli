@@ -1,17 +1,24 @@
 # bhpan-cli
 
-`bhpan-cli` 是一个面向北航云盘（AnyShare）的 Node.js 命令行工具，提供两种使用方式：
+`bhpan-cli` 是一个面向北航云盘（AnyShare）的 Node.js 命令行工具，提供单次 CLI 与交互式 shell 两种使用方式。
 
 - 单次 CLI：适合脚本、SSH、自动化任务
 - 交互式 shell：适合日常手工浏览和文件操作
 
 项目基于 `xdedss/dist_bhpan` 与 `Fucov/PanCLI` 的思路重写，当前实现为 TypeScript + Node 22，并已经针对北航当前线上站点完成真实联调。
 
+## 项目链接
+
+- GitHub: <https://github.com/YingkeSu/bhpan-cli>
+- npm: <https://www.npmjs.com/package/bhpan-cli>
+- Release: <https://github.com/YingkeSu/bhpan-cli/releases/tag/v0.1.1>
+
 ## 当前版本
 
-- 版本：`0.1.0`
+- 版本：`0.1.1`
 - Node 要求：`>= 22`
 - npm 包名：`bhpan-cli`
+- CLI 命令：`bhpan`
 
 ## 已验证能力
 
@@ -41,6 +48,12 @@
 
 ```bash
 npm install -g bhpan-cli
+```
+
+临时执行：
+
+```bash
+npx bhpan-cli --help
 ```
 
 安装后直接使用：
@@ -185,6 +198,12 @@ Windows:
 - 配置：`%APPDATA%\\bhpan\\config.json`
 - 数据：`%LOCALAPPDATA%\\bhpan\\`
 
+## 反馈与发布
+
+- 问题反馈：<https://github.com/YingkeSu/bhpan-cli/issues>
+- 发布记录：[CHANGELOG.md](./CHANGELOG.md)
+- 当前开发状态：[docs/DEV_STATUS.md](./docs/DEV_STATUS.md)
+
 ## 开发
 
 安装依赖：
@@ -215,4 +234,4 @@ npm pack
 
 当前发布产物是标准 npm CLI 包，安装后直接得到 `bhpan` 可执行命令，不再依赖 `node --experimental-transform-types`。
 
-本次发布对应的说明见 [docs/releases/v0.1.0.md](./docs/releases/v0.1.0.md)，持续开发状态见 [docs/DEV_STATUS.md](./docs/DEV_STATUS.md)。
+本次发布对应的说明见 [docs/releases/v0.1.1.md](./docs/releases/v0.1.1.md)；首个公开版本说明见 [docs/releases/v0.1.0.md](./docs/releases/v0.1.0.md)。

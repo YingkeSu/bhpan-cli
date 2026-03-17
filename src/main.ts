@@ -5,6 +5,8 @@ import { takeBooleanFlag, takeFlag, takeIntegerFlag, takeLinkTypeFlag, takeNumbe
 import { loadConfig, saveConfig } from "./config.ts";
 import { PanShell, printList, printStat } from "./shell.ts";
 
+const VERSION = "0.1.1";
+
 function printHelp(): void {
   console.log(`bhpan
 
@@ -61,7 +63,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "--version" || command === "-v") {
-    console.log("0.1.0");
+    console.log(VERSION);
     return;
   }
 

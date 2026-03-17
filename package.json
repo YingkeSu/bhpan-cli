@@ -1,13 +1,23 @@
 {
   "name": "bhpan-cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI and interactive shell for BUAA AnyShare cloud drive",
+  "author": "YingkeSu",
+  "homepage": "https://github.com/YingkeSu/bhpan-cli#readme",
+  "bugs": {
+    "url": "https://github.com/YingkeSu/bhpan-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YingkeSu/bhpan-cli.git"
+  },
   "type": "module",
   "bin": {
     "bhpan": "dist/main.js"
   },
   "files": [
     "dist",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
