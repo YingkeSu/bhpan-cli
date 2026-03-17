@@ -4,7 +4,7 @@
   "description": "CLI and interactive shell for BUAA AnyShare cloud drive",
   "type": "module",
   "bin": {
-    "bhpan": "./dist/main.js"
+    "bhpan": "dist/main.js"
   },
   "files": [
     "dist",
