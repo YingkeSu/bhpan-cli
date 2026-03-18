@@ -1,11 +1,21 @@
 #!/usr/bin/env node
 
 import { BhpanClient, clearCredentials, resolveRemotePath } from "./client.ts";
-import { takeBooleanFlag, takeFlag, takeIntegerFlag, takeLinkTypeFlag, takeLsOptions, takeNumberFlag, takeTreeOptions } from "./cli-options.ts";
+import {
+  takeBooleanFlag,
+  takeFlag,
+  takeIntegerFlag,
+  takeLinkTypeFlag,
+  takeLsOptions,
+  takeMoveOptions,
+  takeReadOptions,
+  takeRmOptions,
+  takeTreeOptions,
+} from "./cli-options.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { PanShell, printList, printStat } from "./shell.ts";
 
-const VERSION = "0.2.0";
+const VERSION = "0.2.1";
 
 function printHelp(): void {
   console.log(`bhpan
@@ -110,18 +120,27 @@ async function main(): Promise<void> {
     case "mkdir":
       await client.mkdir(resolveRemotePath("/", args[1]));
       return;
-    case "rm":
-      await client.rm(resolveRemotePath("/", args[1]), args.includes("-r") || args.includes("--recursive"));
+    case "rm": {
+      const rmArgs = args.slice(1);
+      const rmOptions = takeRmOptions(rmArgs);
+      await client.rm(resolveRemotePath("/", rmOptions.target), rmOptions.recursive);
       return;
+    }
     case "cat":
       await client.cat(resolveRemotePath("/", args[1]), process.stdout);
       return;
-    case "head":
-      await client.head(resolveRemotePath("/", args[1]), takeNumberFlag(args, "-n", "--lines") ?? 10, process.stdout);
+    case "head": {
+      const headArgs = args.slice(1);
+      const headOptions = takeReadOptions(headArgs, "head");
+      await client.head(resolveRemotePath("/", headOptions.target), headOptions.lines, process.stdout);
       return;
-    case "tail":
-      await client.tail(resolveRemotePath("/", args[1]), takeNumberFlag(args, "-n", "--lines") ?? 10, process.stdout);
+    }
+    case "tail": {
+      const tailArgs = args.slice(1);
+      const tailOptions = takeReadOptions(tailArgs, "tail");
+      await client.tail(resolveRemotePath("/", tailOptions.target), tailOptions.lines, process.stdout);
       return;
+    }
     case "touch": {
       const created = await client.touch(resolveRemotePath("/", args[1]));
       console.log(created.name);
@@ -135,12 +154,18 @@ async function main(): Promise<void> {
     case "download":
       await client.download(resolveRemotePath("/", args[1]), args[2] || process.cwd());
       return;
-    case "mv":
-      await client.mv(resolveRemotePath("/", args[1]), resolveRemotePath("/", args[2]), args.includes("-f"), false);
+    case "mv": {
+      const mvArgs = args.slice(1);
+      const mvOptions = takeMoveOptions(mvArgs, "mv");
+      await client.mv(resolveRemotePath("/", mvOptions.src), resolveRemotePath("/", mvOptions.dst), mvOptions.overwrite, false);
       return;
-    case "cp":
-      await client.mv(resolveRemotePath("/", args[1]), resolveRemotePath("/", args[2]), args.includes("-f"), true);
+    }
+    case "cp": {
+      const cpArgs = args.slice(1);
+      const cpOptions = takeMoveOptions(cpArgs, "cp");
+      await client.mv(resolveRemotePath("/", cpOptions.src), resolveRemotePath("/", cpOptions.dst), cpOptions.overwrite, true);
       return;
+    }
     case "link": {
       const linkArgs = args.slice(1);
       const action = linkArgs[0];

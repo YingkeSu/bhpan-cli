@@ -97,6 +97,43 @@ export function takeLsOptions(args: string[]): { recursive: boolean; maxDepth?: 
   };
 }
 
+export function takeReadOptions(args: string[], command: "head" | "tail"): { target: string; lines: number } {
+  const lines = takeNumberFlag(args, "-n", "--lines") ?? 10;
+  const target = args[0];
+  if (!target) {
+    throw new Error(`用法: ${command} <remote_file> [-n lines]`);
+  }
+  return {
+    target,
+    lines,
+  };
+}
+
+export function takeRmOptions(args: string[]): { target: string; recursive: boolean } {
+  const recursive = takeBooleanFlag(args, "-r", "--recursive");
+  const target = args[0];
+  if (!target) {
+    throw new Error("用法: rm <remote_path> [-r]");
+  }
+  return {
+    target,
+    recursive,
+  };
+}
+
+export function takeMoveOptions(args: string[], command: "mv" | "cp"): { src: string; dst: string; overwrite: boolean } {
+  const overwrite = takeBooleanFlag(args, "-f", "--force");
+  const [src, dst] = args;
+  if (!src || !dst) {
+    throw new Error(`用法: ${command} <src> <dst> [-f]`);
+  }
+  return {
+    src,
+    dst,
+    overwrite,
+  };
+}
+
 export function takeLinkTypeFlag(args: string[], allowAll = false): LinkFilterType | LinkShareType | undefined {
   const explicit = takeEnumFlag(args, "--type", allowAll ? ["anonymous", "realname", "all"] as const : ["anonymous", "realname"] as const);
   const wantsRealname = takeBooleanFlag(args, "--realname");
