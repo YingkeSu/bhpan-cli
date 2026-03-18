@@ -97,27 +97,39 @@ export function takeLsOptions(args: string[]): { recursive: boolean; maxDepth?: 
   };
 }
 
-export function takeReadOptions(args: string[]): { target?: string; lines: number } {
+export function takeReadOptions(args: string[], command: "head" | "tail"): { target: string; lines: number } {
   const lines = takeNumberFlag(args, "-n", "--lines") ?? 10;
+  const target = args[0];
+  if (!target) {
+    throw new Error(`用法: ${command} <remote_file> [-n lines]`);
+  }
   return {
-    target: args[0],
+    target,
     lines,
   };
 }
 
-export function takeRmOptions(args: string[]): { target?: string; recursive: boolean } {
+export function takeRmOptions(args: string[]): { target: string; recursive: boolean } {
   const recursive = takeBooleanFlag(args, "-r", "--recursive");
+  const target = args[0];
+  if (!target) {
+    throw new Error("用法: rm <remote_path> [-r]");
+  }
   return {
-    target: args[0],
+    target,
     recursive,
   };
 }
 
-export function takeMoveOptions(args: string[]): { src?: string; dst?: string; overwrite: boolean } {
+export function takeMoveOptions(args: string[], command: "mv" | "cp"): { src: string; dst: string; overwrite: boolean } {
   const overwrite = takeBooleanFlag(args, "-f", "--force");
+  const [src, dst] = args;
+  if (!src || !dst) {
+    throw new Error(`用法: ${command} <src> <dst> [-f]`);
+  }
   return {
-    src: args[0],
-    dst: args[1],
+    src,
+    dst,
     overwrite,
   };
 }

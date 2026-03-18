@@ -131,13 +131,13 @@ async function main(): Promise<void> {
       return;
     case "head": {
       const headArgs = args.slice(1);
-      const headOptions = takeReadOptions(headArgs);
+      const headOptions = takeReadOptions(headArgs, "head");
       await client.head(resolveRemotePath("/", headOptions.target), headOptions.lines, process.stdout);
       return;
     }
     case "tail": {
       const tailArgs = args.slice(1);
-      const tailOptions = takeReadOptions(tailArgs);
+      const tailOptions = takeReadOptions(tailArgs, "tail");
       await client.tail(resolveRemotePath("/", tailOptions.target), tailOptions.lines, process.stdout);
       return;
     }
@@ -156,13 +156,13 @@ async function main(): Promise<void> {
       return;
     case "mv": {
       const mvArgs = args.slice(1);
-      const mvOptions = takeMoveOptions(mvArgs);
+      const mvOptions = takeMoveOptions(mvArgs, "mv");
       await client.mv(resolveRemotePath("/", mvOptions.src), resolveRemotePath("/", mvOptions.dst), mvOptions.overwrite, false);
       return;
     }
     case "cp": {
       const cpArgs = args.slice(1);
-      const cpOptions = takeMoveOptions(cpArgs);
+      const cpOptions = takeMoveOptions(cpArgs, "cp");
       await client.mv(resolveRemotePath("/", cpOptions.src), resolveRemotePath("/", cpOptions.dst), cpOptions.overwrite, true);
       return;
     }

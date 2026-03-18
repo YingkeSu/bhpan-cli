@@ -15,7 +15,7 @@ describe("cli option parsing", () => {
 
   it("parses head flags before path", () => {
     const args = ["-n", "5", "/home/code/readme.txt"];
-    assert.deepEqual(takeReadOptions(args), {
+    assert.deepEqual(takeReadOptions(args, "head"), {
       target: "/home/code/readme.txt",
       lines: 5,
     });
@@ -23,11 +23,23 @@ describe("cli option parsing", () => {
 
   it("parses mv flags before positional args", () => {
     const args = ["-f", "/home/code/a.txt", "/home/code/b.txt"];
-    assert.deepEqual(takeMoveOptions(args), {
+    assert.deepEqual(takeMoveOptions(args, "mv"), {
       src: "/home/code/a.txt",
       dst: "/home/code/b.txt",
       overwrite: true,
     });
+  });
+
+  it("rejects rm without an operand after removing flags", () => {
+    assert.throws(() => takeRmOptions(["-r"]), /用法: rm <remote_path> \[-r\]/);
+  });
+
+  it("rejects head without a target after removing flags", () => {
+    assert.throws(() => takeReadOptions(["-n", "5"], "head"), /用法: head <remote_file> \[-n lines\]/);
+  });
+
+  it("rejects mv without a destination after removing flags", () => {
+    assert.throws(() => takeMoveOptions(["-f", "/home/code/a.txt"], "mv"), /用法: mv <src> <dst> \[-f\]/);
   });
 });
 

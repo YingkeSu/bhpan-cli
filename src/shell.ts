@@ -202,13 +202,13 @@ export class PanShell {
         return;
       case "head": {
         const headArgs = [...args];
-        const headOptions = takeReadOptions(headArgs);
+        const headOptions = takeReadOptions(headArgs, "head");
         await client.head(resolveRemotePath(this.cwd, headOptions.target), headOptions.lines, process.stdout);
         return;
       }
       case "tail": {
         const tailArgs = [...args];
-        const tailOptions = takeReadOptions(tailArgs);
+        const tailOptions = takeReadOptions(tailArgs, "tail");
         await client.tail(resolveRemotePath(this.cwd, tailOptions.target), tailOptions.lines, process.stdout);
         return;
       }
@@ -234,13 +234,13 @@ export class PanShell {
         return;
       case "mv": {
         const mvArgs = [...args];
-        const mvOptions = takeMoveOptions(mvArgs);
+        const mvOptions = takeMoveOptions(mvArgs, "mv");
         await client.mv(resolveRemotePath(this.cwd, mvOptions.src), resolveRemotePath(this.cwd, mvOptions.dst), mvOptions.overwrite, false);
         return;
       }
       case "cp": {
         const cpArgs = [...args];
-        const cpOptions = takeMoveOptions(cpArgs);
+        const cpOptions = takeMoveOptions(cpArgs, "cp");
         await client.mv(resolveRemotePath(this.cwd, cpOptions.src), resolveRemotePath(this.cwd, cpOptions.dst), cpOptions.overwrite, true);
         return;
       }
