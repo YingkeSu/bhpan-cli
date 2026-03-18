@@ -6,7 +6,7 @@ import { ApiManager, MoveToChildDirectoryError } from "./api.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import type { RemoteWalkEntry } from "./remote-walk.ts";
 import { walkRemote } from "./remote-walk.ts";
-import { filterTree, renderTree, type TreeNode } from "./tree-format.ts";
+import { filterTree, filterTreeLegacy, renderTree, calculateStats, type TreeNode } from "./tree-format.ts";
 import type {
   AppConfig,
   DirEntry,
@@ -310,7 +310,15 @@ export class BhpanClient {
 
   async tree(
     logicalPath: string,
-    options: { maxDepth?: number; sortBy?: TreeSortBy; descending?: boolean; regex?: RegExp } = {},
+    options: {
+      maxDepth?: number;
+      sortBy?: TreeSortBy;
+      descending?: boolean;
+      regex?: RegExp;
+      stats?: boolean;
+      type?: "f" | "d";
+      excludeRegex?: RegExp;
+    } = {},
   ): Promise<string[]> {
     const target = await this.mustStat(logicalPath);
     const rootPath = normalizeRemotePath(logicalPath);
@@ -325,8 +333,29 @@ export class BhpanClient {
       options.sortBy ?? "name",
       Boolean(options.descending),
     );
-    const rendered = renderTree(options.regex ? filterTree(nodes, options.regex) : nodes, "");
-    return [rootPath, ...rendered];
+    
+    // Apply filtering (new enhanced filter or legacy regex filter)
+    let filteredNodes = nodes;
+    if (options.type || options.excludeRegex) {
+      filteredNodes = filterTree(nodes, {
+        includeRegex: options.regex,
+        excludeRegex: options.excludeRegex,
+        type: options.type,
+      });
+    } else if (options.regex) {
+      filteredNodes = filterTreeLegacy(nodes, options.regex);
+    }
+    
+    const rendered = renderTree(filteredNodes, "");
+    const result = [rootPath, ...rendered];
+    
+    // Add stats line if requested
+    if (options.stats) {
+      const stats = calculateStats(filteredNodes);
+      result.push(`-- dirs: ${stats.dirs}, files: ${stats.files}, size: ${formatSize(stats.totalSize)}`);
+    }
+    
+    return result;
   }
 
   async getLinks(logicalPath: string, type: LinkFilterType = "all"): Promise<LinkInfo[]> {
@@ -347,9 +376,18 @@ export class BhpanClient {
       usePassword: boolean;
       allowUpload: boolean;
       noDownload: boolean;
+      title?: string;
+      limitedTimes?: number;
+      forever?: boolean;
     },
   ): Promise<LinkInfo> {
     const info = await this.mustStat(logicalPath);
+    
+    // Validate --forever conflicts with --expires
+    if (options.forever && options.expiresDays !== 30) {
+      throw new Error("--forever 不能与 --expires 同时使用");
+    }
+    
     if (options.shareType === "realname") {
       const current = (await this.getLinks(logicalPath, "realname"))[0] || null;
       if (current) {
@@ -364,17 +402,26 @@ export class BhpanClient {
       return this.findCreatedLink(await this.getLinks(logicalPath, "realname"), created.id, "创建实名外链后未查询到结果");
     }
     const current = (await this.getLinks(logicalPath, "anonymous"))[0] || null;
+    
+    // Calculate expires_at
+    let expiresAt: string;
+    if (options.forever) {
+      expiresAt = "9999-12-31T23:59:59.000Z";
+    } else {
+      expiresAt = new Date(Date.now() + options.expiresDays * 86400 * 1000).toISOString();
+    }
+    
     const payload = {
       item: {
         id: info.docid,
         type: info.size === -1 ? ("folder" as const) : ("file" as const),
         allow: this.buildLinkPermissions(info.size === -1, options.noDownload, options.allowUpload),
       },
-      title: info.name,
-      expires_at: new Date(Date.now() + options.expiresDays * 86400 * 1000).toISOString(),
+      title: options.title || info.name,
+      expires_at: expiresAt,
       password: options.usePassword ? (current?.password || this.generateSharePassword()) : "",
       verify_mobile: false,
-      limited_times: -1,
+      limited_times: options.limitedTimes ?? -1,
     };
     if (!current) {
       const created = await this.api.createAnonymousLink(payload);
@@ -417,7 +464,10 @@ export class BhpanClient {
       throw new Error("目标已存在，使用 -f 覆盖");
     }
     if (dstInfo && (srcInfo.size === -1 || dstInfo.size === -1)) {
-      throw new Error("当前不支持使用 -f 覆盖目录，请先手动删除目标目录");
+      // If destination or source is a directory, only block when overwrite is not requested.
+      if (!overwrite) {
+        throw new Error("当前不支持使用 -f 覆盖目录，请先手动删除目标目录");
+      }
     }
 
     const dstSplit = splitRemotePath(finalDst);
@@ -431,7 +481,7 @@ export class BhpanClient {
         await this.rm(finalDst, true);
       }
       if (copy) {
-        const result = await this.api.copy(srcInfo.docid, dstParent.docid, true, false);
+        const result = await this.api.copy(srcInfo.docid, dstParent.docid, true, overwrite);
         if (typeof result !== "string" && result.name !== dstSplit.base) {
           await this.api.rename(result.docid, dstSplit.base);
         }
@@ -448,8 +498,8 @@ export class BhpanClient {
     const needsRename = srcSplit.base !== dstSplit.base;
     try {
       const result = copy
-        ? await this.api.copy(srcInfo.docid, dstParent.docid, needsRename, false)
-        : await this.api.move(srcInfo.docid, dstParent.docid, needsRename, false);
+        ? await this.api.copy(srcInfo.docid, dstParent.docid, needsRename, overwrite)
+        : await this.api.move(srcInfo.docid, dstParent.docid, needsRename, overwrite);
       if (typeof result !== "string" && result.name !== dstSplit.base) {
         await this.api.rename(result.docid, dstSplit.base);
       } else if (typeof result === "string" && needsRename) {
