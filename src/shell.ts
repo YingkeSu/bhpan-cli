@@ -76,7 +76,7 @@ export async function completeShellLine(
 
   const command = tokens[0] || "";
   const args = tokens.slice(1);
-  const argumentIndex = args.length - 1;
+  const argumentIndex = countPositionalArgs(command, args);
   if (!isPathArgument(command, argumentIndex, currentToken)) {
     return [[], currentToken];
   }
@@ -86,6 +86,38 @@ export async function completeShellLine(
   } catch {
     return [[], currentToken];
   }
+}
+
+const VALUE_TAKING_FLAGS: Record<string, Set<string>> = {
+  ls: new Set(["-L", "--depth", "--regex"]),
+  tree: new Set(["-L", "--depth", "--sort", "--regex", "--exclude-regex", "--type", "-t"]),
+  head: new Set(["-n"]),
+  tail: new Set(["-n"]),
+  link: new Set(["--type", "--expires", "--title", "--limited-times"]),
+  upload: new Set([]),
+  download: new Set([]),
+};
+
+function countPositionalArgs(command: string, args: string[]): number {
+  const valueFlags = VALUE_TAKING_FLAGS[command] ?? new Set();
+  let count = 0;
+  let skipNext = false;
+
+  for (const arg of args) {
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      if (valueFlags.has(arg)) {
+        skipNext = true;
+      }
+      continue;
+    }
+    count++;
+  }
+
+  return Math.max(0, count - 1);
 }
 
 async function prompt(question: string): Promise<string> {

@@ -570,6 +570,7 @@ export class BhpanClient {
         name: entry.name,
         dir: entry.dir,
         fullPath,
+        size: entry.size,
         children: [],
       };
       if (entry.dir) {

@@ -36,7 +36,14 @@ export function filterTree(
       return [];
     }
 
-    // Apply include regex
+    if (excludeRegex) {
+      excludeRegex.lastIndex = 0;
+      const excluded = excludeRegex.test(node.fullPath);
+      if (excluded) {
+        return [];
+      }
+    }
+
     if (includeRegex) {
       includeRegex.lastIndex = 0;
       const matches = includeRegex.test(node.fullPath);
@@ -47,15 +54,6 @@ export function filterTree(
         return [];
       }
       return [{ ...node, ...(node.children ? { children: filteredChildren } : {}) }];
-    }
-
-    // Apply exclude regex
-    if (excludeRegex) {
-      excludeRegex.lastIndex = 0;
-      const excluded = excludeRegex.test(node.fullPath);
-      if (excluded) {
-        return [];
-      }
     }
 
     // Recursively filter children

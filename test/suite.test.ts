@@ -187,6 +187,40 @@ describe("shell completion", () => {
     assert.equal(token, "do");
     assert.deepEqual(matches, ["docker.txt", "docs/"]);
   });
+
+  it("completes paths when flags precede the path argument", async () => {
+    const [matches, token] = await completeShellLine("head -n 5 /hom", {
+      cwd: "/home",
+      listRemote: async (remotePath) => {
+        assert.equal(remotePath, "/");
+        return {
+          target: { size: -1 },
+          dirs: [{ name: "home" }],
+          files: [],
+        };
+      },
+    });
+
+    assert.equal(token, "/hom");
+    assert.deepEqual(matches, ["/home/"]);
+  });
+
+  it("completes second path for mv/cp commands", async () => {
+    const [matches, token] = await completeShellLine("mv /src /ds", {
+      cwd: "/home",
+      listRemote: async (remotePath) => {
+        assert.equal(remotePath, "/");
+        return {
+          target: { size: -1 },
+          dirs: [{ name: "dst" }, { name: "home" }],
+          files: [],
+        };
+      },
+    });
+
+    assert.equal(token, "/ds");
+    assert.deepEqual(matches, ["/dst/"]);
+  });
 });
 
 describe("tree enhancements", () => {
@@ -226,6 +260,21 @@ describe("tree enhancements", () => {
     const filtered = filterTree(nodes, { excludeRegex: /\.pdf$/ });
     assert.equal(filtered.length, 1);
     assert.equal(filtered[0].name, "file2.txt");
+  });
+
+  it("should apply both include and exclude regex", () => {
+    const nodes: TreeNode[] = [
+      { name: "file1.pdf", dir: false, fullPath: "/file1.pdf", size: 100 },
+      { name: "file2.txt", dir: false, fullPath: "/file2.txt", size: 200 },
+      { name: "file3.log", dir: false, fullPath: "/file3.log", size: 50 },
+    ];
+    const filtered = filterTree(nodes, {
+      includeRegex: /file[123]/,
+      excludeRegex: /\.pdf$/,
+    });
+    assert.equal(filtered.length, 2);
+    assert.equal(filtered[0].name, "file2.txt");
+    assert.equal(filtered[1].name, "file3.log");
   });
 
   it("should calculate stats correctly", () => {
