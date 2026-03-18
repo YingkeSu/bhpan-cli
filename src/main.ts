@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 import { BhpanClient, clearCredentials, resolveRemotePath } from "./client.ts";
-import { takeBooleanFlag, takeFlag, takeIntegerFlag, takeLinkTypeFlag, takeNumberFlag, takeTreeOptions } from "./cli-options.ts";
+import { takeBooleanFlag, takeFlag, takeIntegerFlag, takeLinkTypeFlag, takeLsOptions, takeNumberFlag, takeTreeOptions } from "./cli-options.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { PanShell, printList, printStat } from "./shell.ts";
 
-const VERSION = "0.1.2";
+const VERSION = "0.2.0";
 
 function printHelp(): void {
   console.log(`bhpan
@@ -15,8 +15,8 @@ function printHelp(): void {
   bhpan login [--username <name>] [--no-store-password]
   bhpan logout
   bhpan whoami
-  bhpan ls [remote_path]
-  bhpan tree [remote_path] [-L depth] [--sort name|mtime|size] [--desc]
+  bhpan ls [remote_path] [-R] [-L depth] [--regex pattern]
+  bhpan tree [remote_path] [-L depth] [--sort name|mtime|size] [--desc] [--regex pattern]
   bhpan stat <remote_path>
   bhpan mkdir <remote_path>
   bhpan rm <remote_path> [-r]
@@ -88,7 +88,12 @@ async function main(): Promise<void> {
       console.log(`stored-password: ${client.config.encrypted ? "yes" : "no"}`);
       return;
     case "ls":
-      await printList(client, resolveRemotePath("/", args[1] || "/home"));
+      {
+        const lsArgs = args.slice(1);
+        const lsOptions = takeLsOptions(lsArgs);
+        const target = resolveRemotePath("/", lsArgs[0] || "/home");
+        await printList(client, target, lsOptions);
+      }
       return;
     case "tree": {
       const treeArgs = args.slice(1);

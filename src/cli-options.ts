@@ -56,15 +56,44 @@ export function takeBooleanFlag(args: string[], ...names: string[]): boolean {
   return matched;
 }
 
+export function takeRegexFlag(args: string[], name = "--regex"): RegExp | undefined {
+  const pattern = takeFlag(args, name);
+  if (pattern === undefined) {
+    return undefined;
+  }
+  try {
+    return new RegExp(pattern);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`invalid regex for ${name}: ${msg}`);
+  }
+}
+
 export function takeTreeOptions(args: string[]): {
   maxDepth?: number;
   sortBy: TreeSortBy;
   descending: boolean;
+  regex?: RegExp;
 } {
   return {
     maxDepth: takeIntegerFlag(args, "-L", "--depth"),
     sortBy: takeEnumFlag(args, "--sort", ["name", "mtime", "size"] as const) ?? "name",
     descending: takeBooleanFlag(args, "--desc"),
+    regex: takeRegexFlag(args, "--regex"),
+  };
+}
+
+export function takeLsOptions(args: string[]): { recursive: boolean; maxDepth?: number; regex?: RegExp } {
+  const recursive = takeBooleanFlag(args, "-R", "--recursive");
+  const maxDepth = takeIntegerFlag(args, "-L", "--depth");
+  const regex = takeRegexFlag(args, "--regex");
+  if (maxDepth !== undefined && !recursive) {
+    throw new Error("--depth/-L requires recursive (-R/--recursive) to be set");
+  }
+  return {
+    recursive,
+    maxDepth,
+    regex,
   };
 }
 

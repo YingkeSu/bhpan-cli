@@ -4,6 +4,9 @@ import { randomInt } from "node:crypto";
 
 import { ApiManager, MoveToChildDirectoryError } from "./api.ts";
 import { loadConfig, saveConfig } from "./config.ts";
+import type { RemoteWalkEntry } from "./remote-walk.ts";
+import { walkRemote } from "./remote-walk.ts";
+import { filterTree, renderTree, type TreeNode } from "./tree-format.ts";
 import type {
   AppConfig,
   DirEntry,
@@ -32,14 +35,15 @@ export class BhpanClient {
     if (!username) {
       throw new Error("尚未配置用户名，请先执行 login 或在 shell 中首次登录");
     }
+    const canReuseStoredSession = options.password === undefined && username === config.username;
     const api = new ApiManager({
       host: config.host,
       username,
       password: options.password ?? null,
       pubkey: config.pubkey,
-      encrypted: config.encrypted,
-      cachedToken: config.cachedToken.token,
-      cachedExpire: config.cachedToken.expires,
+      encrypted: canReuseStoredSession ? config.encrypted : null,
+      cachedToken: canReuseStoredSession ? config.cachedToken.token : "",
+      cachedExpire: canReuseStoredSession ? config.cachedToken.expires : 0,
     });
     await api.ensureToken(Boolean(options.validate));
     config.username = username;
@@ -117,6 +121,54 @@ export class BhpanClient {
     }
     const result = await this.api.listDir(target.docid, { by: "name" });
     return { target, dirs: result.dirs, files: result.files };
+  }
+
+  async listRecursive(logicalPath: string, options: { maxDepth?: number } = {}): Promise<RemoteWalkEntry[]> {
+    const normalized = normalizeRemotePath(logicalPath);
+    const physical = await this.toPhysicalPath(logicalPath);
+    const target = await this.stat(logicalPath);
+    const resolvedTarget = target ?? (physical === "/" ? { size: -1, docid: "", name: "/" } : await this.api.getResourceInfoByPath(physical));
+    if (resolvedTarget && resolvedTarget.size !== -1) {
+      return [];
+    }
+
+    const maxDepth = options.maxDepth ?? Infinity;
+
+    if (normalized === "/") {
+      if (maxDepth <= 0) {
+        return [];
+      }
+      const homePhysical = await this.toPhysicalPath("/home");
+      const home = await this.api.getResourceInfoByPath(homePhysical);
+      if (!home || home.size !== -1) {
+        return [];
+      }
+      const homeEntry: RemoteWalkEntry = {
+        path: "/home",
+        docid: home.docid,
+        dir: true,
+        size: -1,
+        modified: home.modified,
+      };
+      const childEntries = await walkRemote({
+        rootPath: "/home",
+        rootDocid: home.docid,
+        maxDepth: maxDepth - 1,
+        listDir: (docid) => this.api.listDir(docid, { by: "name" }),
+      });
+      return [homeEntry, ...childEntries];
+    }
+
+    if (!resolvedTarget || resolvedTarget.size !== -1) {
+      return [];
+    }
+
+    return walkRemote({
+      rootPath: normalized,
+      rootDocid: resolvedTarget.docid,
+      maxDepth,
+      listDir: (docid) => this.api.listDir(docid, { by: "name" }),
+    });
   }
 
   async mkdir(logicalPath: string): Promise<void> {
@@ -258,15 +310,23 @@ export class BhpanClient {
 
   async tree(
     logicalPath: string,
-    options: { maxDepth?: number; sortBy?: TreeSortBy; descending?: boolean } = {},
+    options: { maxDepth?: number; sortBy?: TreeSortBy; descending?: boolean; regex?: RegExp } = {},
   ): Promise<string[]> {
     const target = await this.mustStat(logicalPath);
-    const lines = [normalizeRemotePath(logicalPath)];
+    const rootPath = normalizeRemotePath(logicalPath);
     if (target.size !== -1) {
-      return lines;
+      return [rootPath];
     }
-    await this.buildTree(target.docid, "", lines, options.maxDepth ?? Infinity, 0, options.sortBy ?? "name", Boolean(options.descending));
-    return lines;
+    const nodes = await this.fetchTreeNodes(
+      target.docid,
+      rootPath,
+      options.maxDepth ?? Infinity,
+      0,
+      options.sortBy ?? "name",
+      Boolean(options.descending),
+    );
+    const rendered = renderTree(options.regex ? filterTree(nodes, options.regex) : nodes, "");
+    return [rootPath, ...rendered];
   }
 
   async getLinks(logicalPath: string, type: LinkFilterType = "all"): Promise<LinkInfo[]> {
@@ -335,24 +395,32 @@ export class BhpanClient {
   }
 
   async mv(src: string, dst: string, overwrite = false, copy = false): Promise<void> {
-    const srcInfo = await this.mustStat(src);
-    const dstInfo = await this.stat(dst);
-    const srcSplit = splitRemotePath(normalizeRemotePath(src));
-    const dstSplit = splitRemotePath(normalizeRemotePath(dst));
-
-    if (dstInfo?.size === -1) {
-      if (copy) {
-        await this.api.copy(srcInfo.docid, dstInfo.docid, overwrite, overwrite);
-      } else {
-        await this.api.move(srcInfo.docid, dstInfo.docid, overwrite, overwrite);
-      }
-      return;
+    const normalizedSrc = normalizeRemotePath(src);
+    const normalizedDst = normalizeRemotePath(dst);
+    if (normalizedSrc === normalizedDst) {
+      throw new Error(copy ? "复制目标不能与源路径相同" : "移动目标不能与源路径相同");
     }
 
-    if (dstInfo && dstInfo.size !== -1 && !overwrite) {
+    const srcInfo = await this.mustStat(normalizedSrc);
+    const srcSplit = splitRemotePath(normalizedSrc);
+    const requestedDst = await this.stat(normalizedDst);
+    const finalDst = requestedDst?.size === -1 ? path.posix.join(normalizedDst, srcSplit.base) : normalizedDst;
+    if (normalizedSrc === finalDst) {
+      throw new Error(copy ? "复制目标不能与源路径相同" : "移动目标不能与源路径相同");
+    }
+
+    const dstInfo = await this.stat(finalDst);
+    if (dstInfo?.docid === srcInfo.docid) {
+      throw new Error(copy ? "复制目标不能与源路径相同" : "移动目标不能与源路径相同");
+    }
+    if (dstInfo && !overwrite) {
       throw new Error("目标已存在，使用 -f 覆盖");
     }
+    if (dstInfo && (srcInfo.size === -1 || dstInfo.size === -1)) {
+      throw new Error("当前不支持使用 -f 覆盖目录，请先手动删除目标目录");
+    }
 
+    const dstSplit = splitRemotePath(finalDst);
     const dstParent = await this.mustStat(dstSplit.parent);
     if (dstParent.size !== -1) {
       throw new Error("目标父路径必须是目录");
@@ -360,23 +428,31 @@ export class BhpanClient {
 
     if (srcSplit.parent === dstSplit.parent) {
       if (dstInfo && overwrite) {
-        await this.rm(dst, true);
+        await this.rm(finalDst, true);
+      }
+      if (copy) {
+        const result = await this.api.copy(srcInfo.docid, dstParent.docid, true, false);
+        if (typeof result !== "string" && result.name !== dstSplit.base) {
+          await this.api.rename(result.docid, dstSplit.base);
+        }
+        return;
       }
       await this.api.rename(srcInfo.docid, dstSplit.base);
       return;
     }
 
     if (dstInfo && overwrite) {
-      await this.rm(dst, true);
+      await this.rm(finalDst, true);
     }
 
+    const needsRename = srcSplit.base !== dstSplit.base;
     try {
       const result = copy
-        ? await this.api.copy(srcInfo.docid, dstParent.docid, true, overwrite)
-        : await this.api.move(srcInfo.docid, dstParent.docid, true, overwrite);
+        ? await this.api.copy(srcInfo.docid, dstParent.docid, needsRename, false)
+        : await this.api.move(srcInfo.docid, dstParent.docid, needsRename, false);
       if (typeof result !== "string" && result.name !== dstSplit.base) {
         await this.api.rename(result.docid, dstSplit.base);
-      } else if (typeof result === "string" && srcSplit.base !== dstSplit.base) {
+      } else if (typeof result === "string" && needsRename) {
         await this.api.rename(result, dstSplit.base);
       }
     } catch (error) {
@@ -421,31 +497,37 @@ export class BhpanClient {
     return [Buffer.from(selected.join("\n") + suffix, "utf8")];
   }
 
-  private async buildTree(
+  private async fetchTreeNodes(
     docid: string,
-    prefix: string,
-    lines: string[],
+    parentPath: string,
     maxDepth: number,
     depth: number,
     sortBy: TreeSortBy,
     descending: boolean,
-  ): Promise<void> {
+  ): Promise<TreeNode[]> {
     if (depth >= maxDepth) {
-      return;
+      return [];
     }
     const { dirs, files } = await this.api.listDir(docid, { by: "name" });
     const entries = [
       ...this.sortTreeEntries(dirs, sortBy, descending).map((entry) => ({ ...entry, dir: true })),
       ...this.sortTreeEntries(files, sortBy, descending).map((entry) => ({ ...entry, dir: false })),
     ];
-    for (const [index, entry] of entries.entries()) {
-      const last = index === entries.length - 1;
-      const marker = last ? "└── " : "├── ";
-      lines.push(`${prefix}${marker}${entry.name}${entry.dir ? "/" : ""}`);
+    const nodes: TreeNode[] = [];
+    for (const entry of entries) {
+      const fullPath = path.posix.join(parentPath, entry.name);
+      const node: TreeNode = {
+        name: entry.name,
+        dir: entry.dir,
+        fullPath,
+        children: [],
+      };
       if (entry.dir) {
-        await this.buildTree(entry.docid, `${prefix}${last ? "    " : "│   "}`, lines, maxDepth, depth + 1, sortBy, descending);
+        node.children = await this.fetchTreeNodes(entry.docid, fullPath, maxDepth, depth + 1, sortBy, descending);
       }
+      nodes.push(node);
     }
+    return nodes;
   }
 
   private createEmptyFile(): string {

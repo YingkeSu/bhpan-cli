@@ -39,7 +39,7 @@
 
 - 登录、登出、身份查看
 - 路径解析与 `/home` 别名
-- `ls`、`tree`、`stat`
+- `ls`、`tree`、`stat`（支持 `-R` 递归列出、`-L` 深度限制、`--regex` 正则过滤）
 - `mkdir`、`rm`
 - `mv`、`cp`
 - `cat`、`head`、`tail`
@@ -127,8 +127,8 @@ bhpan shell
 bhpan login [--username <name>] [--no-store-password]
 bhpan logout
 bhpan whoami
-bhpan ls [remote_path]
-bhpan tree [remote_path] [-L depth] [--sort name|mtime|size] [--desc]
+bhpan ls [remote_path] [-R] [-L depth] [--regex pattern]
+bhpan tree [remote_path] [-L depth] [--sort name|mtime|size] [--desc] [--regex pattern]
 bhpan stat <remote_path>
 bhpan mkdir <remote_path>
 bhpan rm <remote_path> [-r]
@@ -195,7 +195,25 @@ bhpan link create /home/code/report.pdf --type realname
 ```bash
 bhpan link show /home/code/report.pdf
 bhpan link delete /home/code/report.pdf --type all
+
+## 递归列出目录：
+
+```bash
+bhpan ls /home -R
+bhpan ls /home -R -L 2
 ```
+
+## 使用正则表达式过滤：
+
+```bash
+bhpan ls /home -R --regex '.*\\.pdf$'
+bhpan tree /home -L 4 --regex '.*report.*'
+```
+
+**说明：**
+- `ls -R` 递归列出所有文件和目录，显示完整逻辑路径
+- `--regex` 使用 JavaScript 正则表达式匹配完整路径
+- `tree --regex` 显示匹配项及其祖先目录（保持上下文）
 
 ## 已知边界
 
