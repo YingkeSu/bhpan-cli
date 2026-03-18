@@ -1,6 +1,6 @@
 {
   "name": "bhpan-cli",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Unofficial BUAA AnyShare cloud drive CLI and interactive shell",
   "author": "YingkeSu",
   "homepage": "https://github.com/YingkeSu/bhpan-cli#readme",
@@ -26,6 +26,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node --experimental-transform-types ./src/main.ts",
     "shell": "node --experimental-transform-types ./src/main.ts shell",
+    "verify:mv-cp": "node --experimental-transform-types ./scripts/verify-mv-cp.ts",
+    "test": "node --test --experimental-transform-types test",
     "check": "npm run typecheck && node --experimental-transform-types ./src/main.ts --help",
     "prepack": "npm run build",
     "prepublishOnly": "npm run check && npm run build"

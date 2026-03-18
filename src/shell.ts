@@ -2,9 +2,10 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { takeBooleanFlag, takeIntegerFlag, takeLinkTypeFlag, takeNumberFlag, takeTreeOptions } from "./cli-options.ts";
+import { takeBooleanFlag, takeIntegerFlag, takeLinkTypeFlag, takeLsOptions, takeNumberFlag, takeTreeOptions } from "./cli-options.ts";
 import { BhpanClient, clearCredentials, resolveRemotePath } from "./client.ts";
 import { loadConfig, saveConfig } from "./config.ts";
+import { formatLsRecursive } from "./ls-format.ts";
 import type { LinkInfo } from "./types.ts";
 import { formatSize, formatTimestamp } from "./utils.ts";
 
@@ -18,21 +19,76 @@ async function prompt(question: string): Promise<string> {
 }
 
 async function promptHidden(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({ input, output, terminal: true });
-    const onData = (char: Buffer) => {
-      const text = char.toString();
-      if (text !== "\n" && text !== "\r" && text !== "\u0004") {
+  if (!input.isTTY || typeof input.setRawMode !== "function") {
+    return prompt(question);
+  }
+  return new Promise((resolve, reject) => {
+    const wasRaw = input.isRaw;
+    const wasPaused = input.isPaused();
+    let answer = "";
+
+    const cleanup = () => {
+      input.off("data", onData);
+      input.setRawMode(wasRaw);
+      if (wasPaused) {
+        input.pause();
+      }
+    };
+
+    const finish = () => {
+      output.write("\n");
+      cleanup();
+      resolve(answer.trim());
+    };
+
+    const fail = (error: Error) => {
+      output.write("\n");
+      cleanup();
+      reject(error);
+    };
+
+    const onData = (chunk: Buffer | string) => {
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      for (let index = 0; index < text.length; index += 1) {
+        const char = text[index];
+        if (char === "\r" || char === "\n") {
+          finish();
+          return;
+        }
+        if (char === "\u0003") {
+          fail(new Error("已取消输入"));
+          return;
+        }
+        if (char === "\u0004") {
+          fail(new Error("输入已结束"));
+          return;
+        }
+        if (char === "\u007f" || char === "\b") {
+          if (answer.length > 0) {
+            answer = answer.slice(0, -1);
+            output.write("\b \b");
+          }
+          continue;
+        }
+        if (char === "\u001b") {
+          const sequence = text.slice(index).match(/^\u001b\[[0-9;?]*[ -/]*[@-~]/)?.[0];
+          if (sequence) {
+            index += sequence.length - 1;
+          }
+          continue;
+        }
+        if (char < " ") {
+          continue;
+        }
+        answer += char;
         output.write("*");
       }
     };
+
+    output.write(question);
+    input.setRawMode(true);
+    input.resume();
     input.on("data", onData);
-    rl.question(question).then((answer) => {
-      input.off("data", onData);
-      output.write("\n");
-      rl.close();
-      resolve(answer.trim());
-    });
   });
 }
 
@@ -109,8 +165,10 @@ export class PanShell {
         return;
       }
       case "ls": {
-        const target = resolveRemotePath(this.cwd, args[0] || ".");
-        await printList(client, target);
+        const lsArgs = [...args];
+        const lsOptions = takeLsOptions(lsArgs);
+        const target = resolveRemotePath(this.cwd, lsArgs[0] || ".");
+        await printList(client, target, lsOptions);
         return;
       }
       case "stat": {
@@ -197,10 +255,10 @@ export class PanShell {
 
   private printHelp(): void {
     console.log(`可用命令:
-  ls [path]
+  ls [path] [-R] [-L depth] [--regex pattern]
   cd [path]
   pwd
-  tree [path] [-L depth] [--sort name|mtime|size] [--desc]
+  tree [path] [-L depth] [--sort name|mtime|size] [--desc] [--regex pattern]
   stat <path>
   mkdir <path>
   rm <path> [-r]
@@ -274,7 +332,11 @@ export class PanShell {
   }
 }
 
-export async function printList(client: BhpanClient, target: string): Promise<void> {
+export async function printList(
+  client: BhpanClient,
+  target: string,
+  options?: { recursive?: boolean; maxDepth?: number; regex?: RegExp },
+): Promise<void> {
   const result = await client.list(target);
   if (!result.target) {
     throw new Error(`路径不存在: ${target}`);
@@ -283,10 +345,39 @@ export async function printList(client: BhpanClient, target: string): Promise<vo
     console.log(`${formatSize(result.target.size)} ${formatTimestamp(result.target.modified)} ${result.target.name}`);
     return;
   }
-  for (const line of client.formatDirEntries(result.dirs, true)) {
+  if (options?.recursive) {
+    let entries = await client.listRecursive(target, { maxDepth: options.maxDepth });
+    const regex = options.regex;
+    if (regex) {
+      entries = entries.filter((entry) => {
+        regex.lastIndex = 0;
+        return regex.test(entry.path);
+      });
+    }
+    for (const line of formatLsRecursive(entries)) {
+      console.log(line);
+    }
+    return;
+  }
+
+  const regex = options?.regex;
+  const dirs = regex
+    ? result.dirs.filter((entry) => {
+      regex.lastIndex = 0;
+      return regex.test(path.posix.join(target, entry.name));
+    })
+    : result.dirs;
+  const files = regex
+    ? result.files.filter((entry) => {
+      regex.lastIndex = 0;
+      return regex.test(path.posix.join(target, entry.name));
+    })
+    : result.files;
+
+  for (const line of client.formatDirEntries(dirs, true)) {
     console.log(line);
   }
-  for (const line of client.formatDirEntries(result.files, false)) {
+  for (const line of client.formatDirEntries(files, false)) {
     console.log(line);
   }
 }
