@@ -28,7 +28,7 @@
 
 ## 当前版本
 
-- 版本：`0.1.2`
+- 版本：`0.2.1`
 - 运行时：Node `>= 22`
 - npm 包名：`bhpan-cli`
 - CLI 命令：`bhpan`
@@ -195,6 +195,7 @@ bhpan link create /home/code/report.pdf --type realname
 ```bash
 bhpan link show /home/code/report.pdf
 bhpan link delete /home/code/report.pdf --type all
+```
 
 ## 递归列出目录：
 

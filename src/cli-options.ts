@@ -97,6 +97,31 @@ export function takeLsOptions(args: string[]): { recursive: boolean; maxDepth?: 
   };
 }
 
+export function takeReadOptions(args: string[]): { target?: string; lines: number } {
+  const lines = takeNumberFlag(args, "-n", "--lines") ?? 10;
+  return {
+    target: args[0],
+    lines,
+  };
+}
+
+export function takeRmOptions(args: string[]): { target?: string; recursive: boolean } {
+  const recursive = takeBooleanFlag(args, "-r", "--recursive");
+  return {
+    target: args[0],
+    recursive,
+  };
+}
+
+export function takeMoveOptions(args: string[]): { src?: string; dst?: string; overwrite: boolean } {
+  const overwrite = takeBooleanFlag(args, "-f", "--force");
+  return {
+    src: args[0],
+    dst: args[1],
+    overwrite,
+  };
+}
+
 export function takeLinkTypeFlag(args: string[], allowAll = false): LinkFilterType | LinkShareType | undefined {
   const explicit = takeEnumFlag(args, "--type", allowAll ? ["anonymous", "realname", "all"] as const : ["anonymous", "realname"] as const);
   const wantsRealname = takeBooleanFlag(args, "--realname");

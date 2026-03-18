@@ -2,7 +2,16 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 
-import { takeBooleanFlag, takeIntegerFlag, takeLinkTypeFlag, takeLsOptions, takeNumberFlag, takeTreeOptions } from "./cli-options.ts";
+import {
+  takeBooleanFlag,
+  takeIntegerFlag,
+  takeLinkTypeFlag,
+  takeLsOptions,
+  takeMoveOptions,
+  takeReadOptions,
+  takeRmOptions,
+  takeTreeOptions,
+} from "./cli-options.ts";
 import { BhpanClient, clearCredentials, resolveRemotePath } from "./client.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { formatLsRecursive } from "./ls-format.ts";
@@ -179,21 +188,30 @@ export class PanShell {
       case "mkdir":
         await client.mkdir(resolveRemotePath(this.cwd, args[0]));
         return;
-      case "rm":
-        await client.rm(resolveRemotePath(this.cwd, args[0]), args.includes("-r") || args.includes("--recursive"));
+      case "rm": {
+        const rmArgs = [...args];
+        const rmOptions = takeRmOptions(rmArgs);
+        await client.rm(resolveRemotePath(this.cwd, rmOptions.target), rmOptions.recursive);
         return;
+      }
       case "cat":
         await client.cat(resolveRemotePath(this.cwd, args[0]), process.stdout);
         if (process.stdout.writable) {
           process.stdout.write("\n");
         }
         return;
-      case "head":
-        await client.head(resolveRemotePath(this.cwd, args[0]), takeNumberFlag(args, "-n", "--lines") ?? 10, process.stdout);
+      case "head": {
+        const headArgs = [...args];
+        const headOptions = takeReadOptions(headArgs);
+        await client.head(resolveRemotePath(this.cwd, headOptions.target), headOptions.lines, process.stdout);
         return;
-      case "tail":
-        await client.tail(resolveRemotePath(this.cwd, args[0]), takeNumberFlag(args, "-n", "--lines") ?? 10, process.stdout);
+      }
+      case "tail": {
+        const tailArgs = [...args];
+        const tailOptions = takeReadOptions(tailArgs);
+        await client.tail(resolveRemotePath(this.cwd, tailOptions.target), tailOptions.lines, process.stdout);
         return;
+      }
       case "touch": {
         const created = await client.touch(resolveRemotePath(this.cwd, args[0]));
         console.log(`已创建: ${created.name}`);
@@ -214,12 +232,18 @@ export class PanShell {
       case "download":
         await client.download(resolveRemotePath(this.cwd, args[0]), args[1] || process.cwd());
         return;
-      case "mv":
-        await client.mv(resolveRemotePath(this.cwd, args[0]), resolveRemotePath(this.cwd, args[1]), args.includes("-f"), false);
+      case "mv": {
+        const mvArgs = [...args];
+        const mvOptions = takeMoveOptions(mvArgs);
+        await client.mv(resolveRemotePath(this.cwd, mvOptions.src), resolveRemotePath(this.cwd, mvOptions.dst), mvOptions.overwrite, false);
         return;
-      case "cp":
-        await client.mv(resolveRemotePath(this.cwd, args[0]), resolveRemotePath(this.cwd, args[1]), args.includes("-f"), true);
+      }
+      case "cp": {
+        const cpArgs = [...args];
+        const cpOptions = takeMoveOptions(cpArgs);
+        await client.mv(resolveRemotePath(this.cwd, cpOptions.src), resolveRemotePath(this.cwd, cpOptions.dst), cpOptions.overwrite, true);
         return;
+      }
       case "whoami": {
         const cfg = client.config;
         console.log(`host: ${cfg.host}`);
@@ -346,7 +370,16 @@ export async function printList(
     return;
   }
   if (options?.recursive) {
-    let entries = await client.listRecursive(target, { maxDepth: options.maxDepth });
+    let entries = [
+      {
+        path: target,
+        docid: result.target.docid,
+        dir: true,
+        size: result.target.size,
+        modified: result.target.modified,
+      },
+      ...(await client.listRecursive(target, { maxDepth: options.maxDepth })),
+    ];
     const regex = options.regex;
     if (regex) {
       entries = entries.filter((entry) => {
