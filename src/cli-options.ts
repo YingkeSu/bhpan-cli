@@ -74,12 +74,26 @@ export function takeTreeOptions(args: string[]): {
   sortBy: TreeSortBy;
   descending: boolean;
   regex?: RegExp;
+  stats: boolean;
+  type?: "f" | "d";
+  excludeRegex?: RegExp;
 } {
+  // Try --type first, then -t
+  let type: "f" | "d" | undefined = undefined;
+  if (args.includes("--type")) {
+    type = takeEnumFlag(args, "--type", ["f", "d"] as const);
+  } else if (args.includes("-t")) {
+    type = takeEnumFlag(args, "-t", ["f", "d"] as const);
+  }
+  
   return {
     maxDepth: takeIntegerFlag(args, "-L", "--depth"),
     sortBy: takeEnumFlag(args, "--sort", ["name", "mtime", "size"] as const) ?? "name",
     descending: takeBooleanFlag(args, "--desc"),
     regex: takeRegexFlag(args, "--regex"),
+    stats: takeBooleanFlag(args, "--stats"),
+    type,
+    excludeRegex: takeRegexFlag(args, "--exclude-regex"),
   };
 }
 
@@ -154,4 +168,16 @@ export function takeLinkTypeFlag(args: string[], allowAll = false): LinkFilterTy
     return "anonymous";
   }
   return undefined;
+}
+
+export function takeLinkTitle(args: string[]): string | undefined {
+  return takeFlag(args, "--title");
+}
+
+export function takeLinkLimitedTimes(args: string[]): number | undefined {
+  return takeIntegerFlag(args, "--limited-times");
+}
+
+export function takeLinkForever(args: string[]): boolean {
+  return takeBooleanFlag(args, "--forever");
 }

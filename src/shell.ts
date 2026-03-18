@@ -7,6 +7,9 @@ import {
   takeIntegerFlag,
   takeLinkTypeFlag,
   takeLsOptions,
+  takeLinkLimitedTimes,
+  takeLinkForever,
+  takeLinkTitle,
   takeMoveOptions,
   takeReadOptions,
   takeRmOptions,
@@ -17,6 +20,105 @@ import { loadConfig, saveConfig } from "./config.ts";
 import { formatLsRecursive } from "./ls-format.ts";
 import type { LinkInfo } from "./types.ts";
 import { formatSize, formatTimestamp } from "./utils.ts";
+
+const SHELL_COMMANDS = [
+  "ls",
+  "cd",
+  "pwd",
+  "tree",
+  "stat",
+  "mkdir",
+  "rm",
+  "cat",
+  "head",
+  "tail",
+  "touch",
+  "upload",
+  "download",
+  "mv",
+  "cp",
+  "link",
+  "whoami",
+  "logout",
+  "su",
+  "clear",
+  "help",
+  "exit",
+  "quit",
+] as const;
+
+type CompletionEntry = { name: string };
+
+type CompletionListResult = {
+  target: { size: number } | null;
+  dirs: CompletionEntry[];
+  files: CompletionEntry[];
+};
+
+type ShellCompletionContext = {
+  cwd: string;
+  commands?: readonly string[];
+  listRemote: (remotePath: string) => Promise<CompletionListResult>;
+};
+
+export async function completeShellLine(
+  line: string,
+  context: ShellCompletionContext,
+): Promise<[string[], string]> {
+  const commands = context.commands ?? SHELL_COMMANDS;
+  const tokens = tokenizeCompletionLine(line);
+  const currentToken = tokens[tokens.length - 1] ?? "";
+
+  if (tokens.length <= 1) {
+    const matches = commands.filter((command) => command.startsWith(currentToken));
+    return [matches.length ? [...matches] : [...commands], currentToken];
+  }
+
+  const command = tokens[0] || "";
+  const args = tokens.slice(1);
+  const argumentIndex = countPositionalArgs(command, args);
+  if (!isPathArgument(command, argumentIndex, currentToken)) {
+    return [[], currentToken];
+  }
+
+  try {
+    return [await completeRemotePath(currentToken, context), currentToken];
+  } catch {
+    return [[], currentToken];
+  }
+}
+
+const VALUE_TAKING_FLAGS: Record<string, Set<string>> = {
+  ls: new Set(["-L", "--depth", "--regex"]),
+  tree: new Set(["-L", "--depth", "--sort", "--regex", "--exclude-regex", "--type", "-t"]),
+  head: new Set(["-n"]),
+  tail: new Set(["-n"]),
+  link: new Set(["--type", "--expires", "--title", "--limited-times"]),
+  upload: new Set([]),
+  download: new Set([]),
+};
+
+function countPositionalArgs(command: string, args: string[]): number {
+  const valueFlags = VALUE_TAKING_FLAGS[command] ?? new Set();
+  let count = 0;
+  let skipNext = false;
+
+  for (const arg of args) {
+    if (skipNext) {
+      skipNext = false;
+      continue;
+    }
+    if (arg.startsWith("-")) {
+      if (valueFlags.has(arg)) {
+        skipNext = true;
+      }
+      continue;
+    }
+    count++;
+  }
+
+  return Math.max(0, count - 1);
+}
 
 async function prompt(question: string): Promise<string> {
   const rl = readline.createInterface({ input, output });
@@ -101,9 +203,12 @@ async function promptHidden(question: string): Promise<string> {
   });
 }
 
+// Tracks the result of the last executed command to reflect in the prompt
+// null = no command executed yet, true = last command succeeded, false = last command failed
 export class PanShell {
   private cwd = "/home";
   private client: BhpanClient | null = null;
+  private lastStatus: boolean | null = null;
 
   async login(forceUsername?: string): Promise<void> {
     const config = loadConfig();
@@ -128,10 +233,16 @@ export class PanShell {
 
   async run(): Promise<void> {
     await this.login();
-    const rl = readline.createInterface({ input, output });
+    const rl = readline.createInterface({
+      input,
+      output,
+      completer: (line) => this.completeLine(line),
+    });
     try {
       while (true) {
-        const line = (await rl.question(`bhpan:${this.cwd}$ `)).trim();
+        // Build dynamic prompt with username and last command status
+        const promptStr = this.buildPromptFromState();
+        const line = (await rl.question(promptStr)).trim();
         if (!line) {
           continue;
         }
@@ -139,8 +250,12 @@ export class PanShell {
         const [command, ...rest] = args;
         try {
           await this.dispatch(command, rest);
+          // Mark last command as successful for the next prompt
+          this.lastStatus = true;
         } catch (error) {
           console.error(error instanceof Error ? error.message : String(error));
+          // Mark last command as failed for the next prompt
+          this.lastStatus = false;
         }
       }
     } catch (error) {
@@ -150,6 +265,29 @@ export class PanShell {
     } finally {
       rl.close();
     }
+  }
+
+  // Build the shell prompt string reflecting username and last command status
+  // Exposed as a class method so tests can exercise it easily
+  private buildPromptFromState(): string {
+    const username = this.client?.config?.username ?? "";
+    const cwd = this.cwd;
+    const tty = Boolean(output.isTTY);
+    const noColor = Boolean(process.env.NO_COLOR);
+    const useColors = tty && !noColor;
+
+    // Status symbol: ? for unknown (no previous command), ✓ for success, ✗ for failure
+    let symbol: string;
+    if (this.lastStatus === null) {
+      symbol = "?";
+    } else {
+      symbol = this.lastStatus ? "✓" : "✗";
+    }
+    if (useColors) {
+      const colorCode = this.lastStatus === null ? 33 : (this.lastStatus ? 32 : 31);
+      symbol = `\x1b[${colorCode}m${symbol}\x1b[0m`;
+    }
+    return `bhpan<${username}>:${cwd}$ ${symbol}`;
   }
 
   private async dispatch(command: string, args: string[]): Promise<void> {
@@ -277,6 +415,15 @@ export class PanShell {
     return this.client;
   }
 
+  private async completeLine(line: string): Promise<[string[], string]> {
+    const client = this.requireClient();
+    return completeShellLine(line, {
+      cwd: this.cwd,
+      commands: SHELL_COMMANDS,
+      listRemote: (remotePath) => client.list(remotePath),
+    });
+  }
+
   private printHelp(): void {
     console.log(`可用命令:
   ls [path] [-R] [-L depth] [--regex pattern]
@@ -328,14 +475,18 @@ export class PanShell {
       const allowUpload = takeBooleanFlag(linkArgs, "--allow-upload");
       const noDownload = takeBooleanFlag(linkArgs, "--no-download");
       const expiresDays = takeIntegerFlag(linkArgs, "--expires") ?? 30;
+      const title = takeLinkTitle(linkArgs);
+      const limitedTimes = takeLinkLimitedTimes(linkArgs);
+      const forever = takeLinkForever(linkArgs);
+      
       if (type === "all") {
         throw new Error("link create 不支持 --type all");
       }
       if (
         type === "realname" &&
-        (usePassword || allowUpload || noDownload || rawArgs.includes("--expires"))
+        (usePassword || allowUpload || noDownload || rawArgs.includes("--expires") || title || limitedTimes || forever)
       ) {
-        throw new Error("实名外链不支持 --expires、-p、--allow-upload、--no-download");
+        throw new Error("实名外链不支持 --expires、-p、--allow-upload、--no-download、--title、--limited-times、--forever");
       }
       const link = await client.createOrUpdateLink(target, {
         shareType: type,
@@ -343,6 +494,9 @@ export class PanShell {
         usePassword,
         allowUpload,
         noDownload,
+        title,
+        limitedTimes,
+        forever,
       });
       printLinkInfo(client.config.host, target, link);
       return;
@@ -354,6 +508,108 @@ export class PanShell {
     }
     throw new Error(`未知 link 子命令: ${action}`);
   }
+}
+
+function tokenizeCompletionLine(line: string): string[] {
+  const hasTrailingSpace = /\s$/.test(line);
+  const trimmed = line.trim();
+  const tokens = trimmed ? trimmed.split(/\s+/) : [];
+  if (hasTrailingSpace) {
+    tokens.push("");
+  }
+  return tokens;
+}
+
+function isPathArgument(command: string, argumentIndex: number, token: string): boolean {
+  const nonFlagToken = !token.startsWith("-");
+  switch (command) {
+    case "ls":
+    case "cd":
+    case "tree":
+    case "stat":
+    case "mkdir":
+    case "cat":
+    case "touch":
+    case "download":
+      return argumentIndex === 0;
+    case "rm":
+    case "head":
+    case "tail":
+      return argumentIndex === 0 && nonFlagToken;
+    case "mv":
+    case "cp":
+      return (argumentIndex === 0 || argumentIndex === 1) && nonFlagToken;
+    case "upload":
+      return argumentIndex === 1;
+    case "link":
+      return argumentIndex === 1;
+    default:
+      return false;
+  }
+}
+
+async function completeRemotePath(token: string, context: ShellCompletionContext): Promise<string[]> {
+  const { cwd, listRemote } = context;
+  const listPath = token && !token.endsWith("/")
+    ? resolveRemotePath(cwd, path.posix.dirname(token) === "." ? "." : path.posix.dirname(token))
+    : resolveRemotePath(cwd, token || ".");
+  const basenamePrefix = token && !token.endsWith("/") ? path.posix.basename(token) : "";
+
+  const listing = await listRemote(listPath);
+  if (!listing.target || listing.target.size !== -1) {
+    return [];
+  }
+
+  const matches = [
+    ...listing.dirs
+      .filter((entry) => entry.name.startsWith(basenamePrefix))
+      .map((entry) => applyTokenPrefix(token, entry.name, true)),
+    ...listing.files
+      .filter((entry) => entry.name.startsWith(basenamePrefix))
+      .map((entry) => applyTokenPrefix(token, entry.name, false)),
+  ];
+  return [...new Set(matches)].sort((left, right) => left.localeCompare(right, "zh-CN"));
+}
+
+function applyTokenPrefix(token: string, name: string, directory: boolean): string {
+  const suffix = directory ? "/" : "";
+  if (!token) {
+    return `${name}${suffix}`;
+  }
+  if (token.endsWith("/")) {
+    return `${token}${name}${suffix}`;
+  }
+  const dirPart = path.posix.dirname(token);
+  if (dirPart === ".") {
+    return `${name}${suffix}`;
+  }
+  if (dirPart === "/") {
+    return `/${name}${suffix}`;
+  }
+  return `${dirPart}/${name}${suffix}`;
+}
+
+// Public helper to render a prompt string given a context. This is used by tests.
+export function computePrompt(params: {
+  username: string;
+  cwd: string;
+  lastStatus: boolean | null;
+  tty?: boolean;
+  noColor?: boolean;
+}): string {
+  const { username, cwd, lastStatus, tty, noColor } = params;
+  const useColors = (typeof tty === "boolean" ? tty : Boolean(process.stdout.isTTY)) && !(noColor ?? Boolean(process.env.NO_COLOR));
+  let symbol: string;
+  if (lastStatus === null) {
+    symbol = "?";
+  } else {
+    symbol = lastStatus ? "✓" : "✗";
+  }
+  if (useColors) {
+    const colorCode = lastStatus === null ? 33 : (lastStatus ? 32 : 31);
+    symbol = `\x1b[${colorCode}m${symbol}\x1b[0m`;
+  }
+  return `bhpan<${username}>:${cwd}$ ${symbol}`;
 }
 
 export async function printList(
