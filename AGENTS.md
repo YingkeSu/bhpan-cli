@@ -1,5 +1,8 @@
 # Repository Guidelines
 
+> **⚠️ 标准化开发流程**：所有开发必须严格遵循 [docs/WORKFLOW.md](./docs/WORKFLOW.md) 定义的工作流程。
+> 核心要求：开发前检查 issues/PRs → 测试通过后提交 → 等待 10 分钟检查 review → review 通过后才合并。
+
 ## Project Structure & Module Organization
 
 - `src/`: TypeScript runtime code. `main.ts` is the one-shot CLI entry, `shell.ts` handles the interactive shell, `client.ts` coordinates high-level AnyShare operations, and `api.ts` / `network.ts` wrap remote calls.
@@ -40,123 +43,37 @@
 
 ## Pull Request & Code Review Workflow
 
-### Workflow Overview
+> **完整流程详见 [docs/WORKFLOW.md](./docs/WORKFLOW.md)**
 
-All code changes must follow this review process before merging to `main`:
+### 核心要点
 
+1. **开发前必查**：检查 GitHub open issues 和 PRs，优先处理
+2. **测试必过**：`npm run typecheck` + `npm test` + `npm run build` 全部通过
+3. **等待 10 分钟**：提交 PR 后等待 10 分钟再检查 Codex review 结果
+4. **循环直到通过**：review 未通过则修复并重新提交，重复直到 APPROVED
+
+### 分支策略
+
+- **opencode**: 开发分支（在此开发，从此创建 PR）
+- **main**: 发布分支（仅接受 reviewed PR 的合并）
+
+### 快速命令
+
+```bash
+# 开发前检查
+gh issue list --repo YingkeSu/bhpan-cli --state open
+gh pr list --repo YingkeSu/bhpan-cli --state open
+
+# 本地验证
+npm run typecheck && npm test && npm run build
+
+# PR 操作
+gh pr create --repo YingkeSu/bhpan-cli --base main --head opencode
+gh pr view --repo YingkeSu/bhpan-cli --json reviewDecision
+
+# 等待 10 分钟后检查 review
+sleep 600 && gh pr view --repo YingkeSu/bhpan-cli --json reviewDecision
 ```
-[Local Development] → [Push to opencode] → [Create/Update PR] → [Codex Review] → [Fix if needed] → [Re-review] → [Merge] → [Release]
-```
-
-### Step-by-Step Process
-
-#### Phase 1: Local Development & Verification
-
-1. **Make changes** on `opencode` branch
-2. **Run local verification** (required before pushing):
-   ```bash
-   npm run typecheck  # TypeScript validation
-   npm test           # Unit tests
-   npm run build      # Production build
-   ```
-3. **For integration changes** (optional but recommended):
-   ```bash
-   npm run verify:mv-cp  # Live site integration test (requires credentials)
-   ```
-
-#### Phase 2: Push & Create PR
-
-4. **Push to origin**:
-   ```bash
-   git push origin opencode
-   ```
-
-5. **Create or update PR** to `main`:
-   - Use GitHub UI or `gh pr create`
-   - **PR description must include**:
-     - Summary of changes
-     - Verification commands run
-     - Any environment assumptions (e.g., tested with real AnyShare account)
-     - Required env vars if applicable
-
-#### Phase 3: Code Review
-
-6. **Codex review triggers automatically** when PR is created/updated
-   - No manual trigger needed (GitHub auto-review configured)
-   - Codex provides inline comments on specific commits
-
-7. **If Codex identifies issues**:
-   - Fix issues on `opencode` branch
-   - Push fixes: `git push origin opencode` (PR auto-updates)
-   - Codex auto-reviews on push
-   - Repeat until no blockers
-
-8. **Review completion criteria**:
-   - No blocking issues from Codex
-   - All local verification passes
-   - Any security/concern points addressed in PR comments
-
-#### Phase 4: Merge & Release
-
-9. **Merge PR** to `main`:
-   - Use GitHub UI "Squash and merge" (recommended) or "Merge commit"
-   - Do NOT use "Rebase" (preserves commit history for changelog)
-
-10. **Post-merge tasks**:
-    - Update CHANGELOG.md if user-facing changes
-    - Bump version in package.json (if preparing release)
-    - Create git tag and push to origin
-    - Run `npm publish` for releases
-
-### PR Description Template
-
-When creating or updating PRs, include:
-
-```markdown
-## Summary
-[Brief description of changes]
-
-## Verification
-Commands run:
-- [ ] `npm run typecheck`
-- [ ] `npm test`
-- [ ] `npm run build`
-- [ ] `npm run verify:mv-cp` (if applicable)
-
-## Environment Assumptions
-[Any specific test conditions, e.g., "Tested with real BUAA AnyShare account", "Requires BHPAN_USERNAME env var"]
-
-## Notes
-[Any additional context for reviewers]
-```
-
-### Review Escalation Path
-
-- **Codex blockers**: Fix and push, auto-re-review
-- **Disagreement with Codex**: Add comment explaining rationale, maintain thread for documentation
-- **Urgent fixes**: Follow same process; review still required for audit trail
-
-### Branch Strategy
-
-- **opencode**: Active development branch (push here, PR from here)
-- **main**: Release branch (only merge reviewed PRs here)
-- **feature branches**: Not used; all development on `opencode`
-
-### Required Status Checks (Pre-merge)
-
-Before merging any PR, ensure:
-- [ ] `npm run typecheck` passes
-- [ ] `npm test` passes
-- [ ] `npm run build` succeeds
-- [ ] `npm run check` passes (typecheck + test + help)
-- [ ] Codex review completed with no unresolved blockers
-
-### Release Gate
-
-No release without review:
-- All changes must go through PR + Codex review
-- Direct commits to `main` are prohibited
-- Version bumps follow same review process
 
 ## Security & Configuration Tips
 

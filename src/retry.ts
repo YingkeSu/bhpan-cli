@@ -1,5 +1,7 @@
 // Retry configuration and utilities for upload/download operations
 
+import { ApiError } from "./network.ts";
+
 export interface RetryOptions {
   maxRetries?: number;
   initialDelay?: number;
@@ -41,6 +43,13 @@ export function calculateBackoff(attempt: number, options: RetryOptions): number
  * Check if an error is retryable
  */
 export function isRetryableError(error: Error): boolean {
+  // Check for ApiError instances first
+  if (error instanceof ApiError) {
+    const status = error.statusCode;
+    // Retry 5xx server errors and 429 (rate limit)
+    return status >= 500 || status === 429;
+  }
+  
   // Network errors, timeouts, 5xx errors are retryable
   const errorMessage = error.message.toLowerCase();
   
@@ -50,7 +59,7 @@ export function isRetryableError(error: Error): boolean {
   if (errorMessage.includes("enotfound")) return false; // Don't retry 404
   if (errorMessage.includes("econnaborted")) return true;
   
-  // Check for HTTP status codes if present
+  // Check for HTTP status codes if present in message
   const statusMatch = errorMessage.match(/\b(\d{3})\b/);
   if (statusMatch) {
     const status = parseInt(statusMatch[1], 10);
