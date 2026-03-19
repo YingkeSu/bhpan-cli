@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0
+
+### 新功能
+
+**Tree 命令增强**
+- `--stats`: 显示目录/文件数量和总大小统计
+- `--type f|d`: 按类型过滤（仅文件/仅目录）
+- `--exclude-regex`: 排除匹配正则的文件
+
+**Shell 改进**
+- Tab 补全：支持命令名和远程路径补全
+- 命令状态提示：prompt 显示上次命令结果（✓/✗/?）
+
+**Link 命令增强**
+- `--title`: 设置分享标题
+- `--limited-times`: 限制访问次数
+- `--forever`: 永久分享
+
+**基础设施（为未来功能准备）**
+- `src/retry.ts`: 指数退避重试工具
+- `src/transfer-state.ts`: 传输状态持久化（用于断点续传）
+
+### 修复
+
+- `fetchTreeNodes` 现在复制 `entry.size` 到 `TreeNode`，修复 `tree --stats` 显示大小为 0 的问题
+- `filterTree` 先应用 `excludeRegex` 再应用 `includeRegex`，修复两者同时使用时 exclude 无效的问题
+- Shell 补全现在正确忽略选项标志，`head -n 5 /foo` 等命令可以正确补全路径
+
 ## 0.2.2
 
 - 修复 `rm -r` 缺少 operand 时可能递归删除 `/` 或 shell 当前目录的危险行为
