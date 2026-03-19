@@ -1,10 +1,12 @@
 # 开发状态
 
-最后更新：2026-03-18 12:35 CST
+最后更新：2026-03-19 00:00 UTC
 
 ## 当前总结
 
 - 项目是一个 Node 22 CLI / 本地工具，采用"共享核心 + 单次 CLI + 交互式 shell"架构。
+- **标准化开发流程已建立**：详见 [docs/WORKFLOW.md](./docs/WORKFLOW.md)
+- 核心流程：开发前检查 issues/PRs → 测试通过后提交 → 等待 10 分钟检查 review → review 通过后才合并
 - `main` 分支当前停在 `309acb4`（`v0.3.0` 发布）。
 - 已公开发布的最新 npm 版本是 `bhpan-cli@0.3.0`，对应 commit `309acb4`，tag `v0.3.0` 已推送到 GitHub。
 - GitHub PR `#3` 已合并：<https://github.com/YingkeSu/bhpan-cli/pull/3>，包含 v0.3.0 的所有新功能。
@@ -93,14 +95,30 @@
 
 ## GitHub Code Review 工作流
 
-- 代码开发在 `opencode` 分支进行，通过 PR 合入 `main`。
-- 标准步骤：
-  1. 本地完成实现与验证：`npm test`、`npm run check`、`npm run build`
-  2. 推送分支：`git push origin opencode`
-  3. 创建或更新 PR 到 `main`
-  4. 在 PR 中评论 `@codex review`
-  5. 按 Codex 反馈修复并 push
-  6. 合并后发布
+> **完整流程详见 [docs/WORKFLOW.md](./docs/WORKFLOW.md)**
+
+核心要点：
+1. **开发前必查**：`gh issue list` + `gh pr list` 检查待处理项
+2. **测试必过**：`npm run typecheck` + `npm test` + `npm run build` 全部通过
+3. **等待 10 分钟**：PR 提交后等待 10 分钟再检查 Codex review 结果
+4. **循环直到通过**：review 未通过则修复并重新提交，重复直到 APPROVED
+
+快速命令：
+```bash
+# 开发前检查
+gh issue list --repo YingkeSu/bhpan-cli --state open
+gh pr list --repo YingkeSu/bhpan-cli --state open
+
+# 本地验证
+npm run typecheck && npm test && npm run build
+
+# PR 操作
+gh pr create --repo YingkeSu/bhpan-cli --base main --head opencode
+gh pr view --repo YingkeSu/bhpan-cli --json reviewDecision
+
+# 等待 10 分钟后检查 review
+sleep 600 && gh pr view --repo YingkeSu/bhpan-cli --json reviewDecision
+```
 
 ## 已知问题与风险
 
