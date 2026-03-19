@@ -43,18 +43,19 @@ describe("buildUploadPlan", () => {
   });
 
   it("creates plan for directory with files", () => {
-    fs.mkdirSync(path.join(tempDir, "subdir"));
-    fs.writeFileSync(path.join(tempDir, "file1.txt"), "content1");
-    fs.writeFileSync(path.join(tempDir, "subdir", "file2.txt"), "content22");
+    const dirPath = path.join(tempDir, "mydir");
+    fs.mkdirSync(path.join(dirPath, "subdir"), { recursive: true });
+    fs.writeFileSync(path.join(dirPath, "file1.txt"), "content1");
+    fs.writeFileSync(path.join(dirPath, "subdir", "file2.txt"), "content22");
 
-    const plan = buildUploadPlan(tempDir, "/remote/dir");
+    const plan = buildUploadPlan(dirPath, "/remote");
 
     assert.equal(plan.files.length, 2);
-    assert.equal(plan.totalSize, 9 + 9); 
+    assert.equal(plan.totalSize, 8 + 9);
 
     const paths = plan.files.map((f) => f.remotePath);
-    assert.ok(paths.includes("/remote/dir/file1.txt"));
-    assert.ok(paths.includes("/remote/dir/subdir/file2.txt"));
+    assert.ok(paths.includes("/remote/mydir/file1.txt"));
+    assert.ok(paths.includes("/remote/mydir/subdir/file2.txt"));
   });
 
   it("sorts files by local path", () => {
@@ -64,9 +65,9 @@ describe("buildUploadPlan", () => {
 
     const plan = buildUploadPlan(tempDir, "/remote");
 
-    assert.equal(plan.files[0].localPath.endsWith("alpha.txt"), true);
-    assert.equal(plan.files[1].localPath.endsWith("middle.txt"), true);
-    assert.equal(plan.files[2].localPath.endsWith("zebra.txt"), true);
+    assert.ok(plan.files[0].localPath.endsWith("alpha.txt"));
+    assert.ok(plan.files[1].localPath.endsWith("middle.txt"));
+    assert.ok(plan.files[2].localPath.endsWith("zebra.txt"));
   });
 
   it("applies filter function", () => {
@@ -97,6 +98,17 @@ describe("buildUploadPlan", () => {
     const plan = buildUploadPlan(filePath, "/remote/dir/");
 
     assert.equal(plan.files[0].remotePath, "/remote/dir/test.txt");
+  });
+
+  it("preserves source directory name in remote path", () => {
+    const srcDir = path.join(tempDir, "photos");
+    fs.mkdirSync(srcDir);
+    fs.writeFileSync(path.join(srcDir, "image.jpg"), "binary");
+
+    const plan = buildUploadPlan(srcDir, "/backup");
+
+    assert.equal(plan.files.length, 1);
+    assert.equal(plan.files[0].remotePath, "/backup/photos/image.jpg");
   });
 });
 

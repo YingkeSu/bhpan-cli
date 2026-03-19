@@ -76,12 +76,18 @@ git pull origin opencode
 ### Step 1.3: 本地测试（必须通过）
 
 ```bash
+npm run check      # 完整验证（typecheck + test + help）
+```
+
+或分别执行：
+
+```bash
 npm run typecheck  # TypeScript 类型检查
 npm test           # 单元测试
 npm run build      # 构建验证
 ```
 
-**三项必须全部通过**，才能进入下一阶段。
+**所有检查必须全部通过**，才能进入下一阶段。
 
 ### Step 1.4: 集成测试（如适用）
 

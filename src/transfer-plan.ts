@@ -83,11 +83,10 @@ export function buildUploadPlan(
     // Path doesn't exist, return empty plan
   }
 
-  if (rootStat && rootStat.isFile()) {
+  if (rootStat) {
     const baseName = path.basename(localPath);
-    walk(localPath, `${normalizedRemoteDir}/${baseName}`);
-  } else {
-    walk(localPath, normalizedRemoteDir);
+    const remoteTarget = `${normalizedRemoteDir}/${baseName}`;
+    walk(localPath, remoteTarget);
   }
 
   files.sort((a, b) => a.localPath.localeCompare(b.localPath, "en"));
@@ -143,12 +142,15 @@ export async function buildDownloadPlan(
 
   if (rootInfo && rootInfo.size >= 0) {
     const baseName = path.posix.basename(normalizedRemotePath);
-    files.push({
-      docid: rootInfo.docid,
-      remotePath: normalizedRemotePath,
-      localPath: path.join(normalizedLocalDir, baseName),
-      size: rootInfo.size,
-    });
+    const fileRemotePath = normalizedRemotePath;
+    if (!options.filter || options.filter(fileRemotePath)) {
+      files.push({
+        docid: rootInfo.docid,
+        remotePath: fileRemotePath,
+        localPath: path.join(normalizedLocalDir, baseName),
+        size: rootInfo.size,
+      });
+    }
   } else if (rootInfo) {
     const baseName = path.posix.basename(normalizedRemotePath);
     const rootLocalPath = normalizedRemotePath === "" ? normalizedLocalDir : path.join(normalizedLocalDir, baseName);

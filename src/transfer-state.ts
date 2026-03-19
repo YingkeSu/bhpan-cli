@@ -77,8 +77,12 @@ export function listTransferStates(): TransferState[] {
   const states: TransferState[] = [];
 
   for (const file of files) {
-    const data = fs.readFileSync(path.join(stateDir, file), "utf8");
-    states.push(JSON.parse(data) as TransferState);
+    try {
+      const data = fs.readFileSync(path.join(stateDir, file), "utf8");
+      states.push(JSON.parse(data) as TransferState);
+    } catch {
+      // Skip malformed state files
+    }
   }
 
   return states;
