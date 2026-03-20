@@ -9,6 +9,7 @@ export interface UploadPlanFile {
 
 export interface UploadPlan {
   type: "upload";
+  directories: string[];
   files: UploadPlanFile[];
   totalSize: number;
 }
@@ -22,6 +23,7 @@ export interface DownloadPlanFile {
 
 export interface DownloadPlan {
   type: "download";
+  directories: string[];
   files: DownloadPlanFile[];
   totalSize: number;
 }
@@ -47,6 +49,7 @@ export function buildUploadPlan(
   remoteDir: string,
   options: { filter?: (localPath: string) => boolean } = {},
 ): UploadPlan {
+  const directories: string[] = [];
   const files: UploadPlanFile[] = [];
   const normalizedRemoteDir = remoteDir.replace(/\/+$/, "");
 
@@ -58,6 +61,7 @@ export function buildUploadPlan(
       return;
     }
     if (stat.isDirectory()) {
+      directories.push(currentRemote);
       const entries = fs.readdirSync(currentLocal);
       for (const entry of entries) {
         const childLocal = path.join(currentLocal, entry);
@@ -89,12 +93,14 @@ export function buildUploadPlan(
     walk(localPath, remoteTarget);
   }
 
+  directories.sort((a, b) => a.localeCompare(b, "en"));
   files.sort((a, b) => a.localPath.localeCompare(b.localPath, "en"));
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return {
     type: "upload",
+    directories,
     files,
     totalSize,
   };
@@ -109,6 +115,7 @@ export async function buildDownloadPlan(
     filter?: (remotePath: string) => boolean;
   } = {},
 ): Promise<DownloadPlan> {
+  const directories: string[] = [];
   const files: DownloadPlanFile[] = [];
   const normalizedRemotePath = remotePath.replace(/\/+$/, "");
   const normalizedLocalDir = localDir.replace(/\/+$/, "");
@@ -132,6 +139,7 @@ export async function buildDownloadPlan(
     for (const dir of dirs) {
       const dirRemotePath = `${currentRemote}/${dir.name}`;
       const dirLocalPath = path.join(currentLocal, dir.name);
+      directories.push(dirLocalPath);
       await walk(dirRemotePath, dirLocalPath, dir.docid);
     }
   }
@@ -154,15 +162,18 @@ export async function buildDownloadPlan(
   } else if (rootInfo) {
     const baseName = path.posix.basename(normalizedRemotePath);
     const rootLocalPath = normalizedRemotePath === "" ? normalizedLocalDir : path.join(normalizedLocalDir, baseName);
+    directories.push(rootLocalPath);
     await walk(normalizedRemotePath, rootLocalPath, rootInfo.docid);
   }
 
+  directories.sort((a, b) => a.localeCompare(b, "en"));
   files.sort((a, b) => a.remotePath.localeCompare(b.remotePath, "en"));
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return {
     type: "download",
+    directories,
     files,
     totalSize,
   };

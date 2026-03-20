@@ -69,6 +69,18 @@ export function takeRegexFlag(args: string[], name = "--regex"): RegExp | undefi
   }
 }
 
+export function takeTransferOptions(args: string[]): {
+  resume?: string;
+  noResume: boolean;
+} {
+  const resume = takeFlag(args, "--resume");
+  const noResume = takeBooleanFlag(args, "--no-resume");
+  if (resume && noResume) {
+    throw new Error("不能同时指定 --resume 和 --no-resume");
+  }
+  return { resume, noResume };
+}
+
 export function takeTreeOptions(args: string[]): {
   maxDepth?: number;
   sortBy: TreeSortBy;

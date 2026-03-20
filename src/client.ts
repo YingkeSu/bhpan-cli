@@ -4,8 +4,11 @@ import { randomInt } from "node:crypto";
 
 import { ApiManager, MoveToChildDirectoryError } from "./api.ts";
 import { loadConfig, saveConfig } from "./config.ts";
+import { retryWithBackoff } from "./retry.ts";
 import type { RemoteWalkEntry } from "./remote-walk.ts";
 import { walkRemote } from "./remote-walk.ts";
+import { buildDownloadPlan, buildUploadPlan } from "./transfer-plan.ts";
+import { deleteTransferState, generateTransferId, loadTransferState, saveTransferState, type TransferState } from "./transfer-state.ts";
 import { filterTree, filterTreeLegacy, renderTree, calculateStats, type TreeNode } from "./tree-format.ts";
 import type {
   AppConfig,
@@ -18,6 +21,15 @@ import type {
   UploadResult,
 } from "./types.ts";
 import { formatSize, formatTimestamp, normalizeRemotePath, pad, resolveRemotePath, splitRemotePath } from "./utils.ts";
+
+export interface UploadCommandResult {
+  transferId?: string;
+  results: UploadResult[];
+}
+
+export interface TransferCommandResult {
+  transferId?: string;
+}
 
 export class BhpanClient {
   readonly config: AppConfig;
@@ -226,42 +238,76 @@ export class BhpanClient {
     await this.api.deleteFile(info.docid);
   }
 
-  async upload(localPath: string, remoteDir: string): Promise<UploadResult[]> {
+  async upload(localPath: string, remoteDir: string, options: { persistState?: boolean } = {}): Promise<UploadCommandResult> {
     const targetDir = await this.mustStat(remoteDir);
     if (targetDir.size !== -1) {
       throw new Error("上传目标必须是目录");
     }
-    const stat = fs.statSync(localPath);
-    const results: UploadResult[] = [];
-    if (stat.isDirectory()) {
-      const dirname = path.basename(localPath);
-      const nextRemote = path.posix.join(remoteDir, dirname);
-      await this.mkdir(nextRemote);
-      for (const entry of fs.readdirSync(localPath)) {
-        results.push(...(await this.upload(path.join(localPath, entry), nextRemote)));
-      }
-      return results;
-    }
-    results.push(await this.api.uploadFile(targetDir.docid, path.basename(localPath), localPath));
-    return results;
+    fs.statSync(localPath);
+    const plan = buildUploadPlan(localPath, remoteDir);
+    const state: TransferState = {
+      id: generateTransferId(),
+      type: "upload",
+      startTime: Date.now(),
+      directories: plan.directories,
+      files: plan.files.map((file) => ({
+        localPath: file.localPath,
+        remotePath: file.remotePath,
+        size: file.size,
+        uploaded: false,
+      })),
+      currentIndex: 0,
+      totalSize: plan.totalSize,
+      uploadedSize: 0,
+      status: "in_progress",
+    };
+    return {
+      transferId: options.persistState === false ? undefined : state.id,
+      results: await this.runUploadTransfer(state, options.persistState !== false),
+    };
   }
 
-  async download(remotePath: string, localDir: string): Promise<void> {
+  async resumeUpload(transferId: string): Promise<UploadCommandResult> {
+    const state = this.loadSavedTransferState(transferId, "upload");
+    return {
+      transferId: state.id,
+      results: await this.runUploadTransfer(state, true),
+    };
+  }
+
+  async download(remotePath: string, localDir: string, options: { persistState?: boolean } = {}): Promise<TransferCommandResult> {
     const info = await this.mustStat(remotePath);
-    if (info.size === -1) {
-      const destination = path.join(localDir, path.posix.basename(normalizeRemotePath(remotePath)));
-      fs.mkdirSync(destination, { recursive: true });
-      const listing = await this.api.listDir(info.docid, { by: "name" });
-      for (const dir of listing.dirs) {
-        await this.download(path.posix.join(remotePath, dir.name), destination);
-      }
-      for (const file of listing.files) {
-        await this.download(path.posix.join(remotePath, file.name), destination);
-      }
-      return;
-    }
-    fs.mkdirSync(localDir, { recursive: true });
-    await this.api.downloadFile(info.docid, path.join(localDir, info.name));
+    const plan = await buildDownloadPlan(remotePath, localDir, (docid) => this.api.listDir(docid, { by: "name" }), {
+      getRootInfo: async () => ({ docid: info.docid, size: info.size }),
+    });
+    const state: TransferState = {
+      id: generateTransferId(),
+      type: "download",
+      startTime: Date.now(),
+      directories: plan.directories,
+      files: plan.files.map((file) => ({
+        localPath: file.localPath,
+        remotePath: file.remotePath,
+        size: file.size,
+        uploaded: false,
+      })),
+      currentIndex: 0,
+      totalSize: plan.totalSize,
+      uploadedSize: 0,
+      status: "in_progress",
+    };
+    await this.runDownloadTransfer(state, options.persistState !== false);
+    return {
+      transferId: options.persistState === false ? undefined : state.id,
+    };
+  }
+
+  async resumeDownload(transferId: string): Promise<TransferCommandResult> {
+    const state = this.loadSavedTransferState(transferId, "download");
+    await this.runDownloadTransfer(state, true);
+    return {
+      transferId: state.id,
+    };
   }
 
   async cat(remotePath: string, writable: NodeJS.WritableStream): Promise<void> {
@@ -585,6 +631,142 @@ export class BhpanClient {
     const tempFile = path.join(fs.mkdtempSync(path.join(fs.realpathSync("/tmp"), "bhpan-touch-")), "empty");
     fs.writeFileSync(tempFile, "");
     return tempFile;
+  }
+
+  private loadSavedTransferState(transferId: string, type: TransferState["type"]): TransferState {
+    const state = loadTransferState(transferId);
+    if (!state) {
+      throw new Error(`未找到传输状态: ${transferId}`);
+    }
+    if (state.type !== type) {
+      throw new Error(`传输 ${transferId} 不是 ${type} 任务`);
+    }
+    return state;
+  }
+
+  private normalizeTransferState(state: TransferState): void {
+    const nextIndex = state.files.findIndex((file) => !file.uploaded);
+    state.currentIndex = nextIndex === -1 ? state.files.length : nextIndex;
+    state.uploadedSize = state.files.reduce((sum, file) => sum + (file.uploaded ? file.size : 0), 0);
+    state.totalSize = state.files.reduce((sum, file) => sum + file.size, 0);
+    state.status = "in_progress";
+    delete state.error;
+  }
+
+  private saveTransferStateIfNeeded(state: TransferState, persistState: boolean): void {
+    if (persistState) {
+      saveTransferState(state);
+    }
+  }
+
+  private async ensureTransferDirectories(state: TransferState): Promise<void> {
+    for (const directory of state.directories || []) {
+      if (state.type === "upload") {
+        await this.mkdir(directory);
+        continue;
+      }
+      fs.mkdirSync(directory, { recursive: true });
+    }
+  }
+
+  private markTransferFailure(state: TransferState, error: unknown, persistState: boolean): Error {
+    state.status = "failed";
+    state.currentIndex = state.files.findIndex((file) => !file.uploaded);
+    if (state.currentIndex === -1) {
+      state.currentIndex = state.files.length;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    state.error = message;
+    return new Error(persistState ? `${message}；可使用 --resume ${state.id} 继续此传输` : message);
+  }
+
+  private async runRetriedOperation<T>(operation: () => Promise<T>, fallbackMessage: string): Promise<T> {
+    const result = await retryWithBackoff(operation);
+    if (result.success) {
+      return result.data as T;
+    }
+    throw result.error || new Error(fallbackMessage);
+  }
+
+  private async runUploadTransfer(state: TransferState, persistState: boolean): Promise<UploadResult[]> {
+    this.normalizeTransferState(state);
+    this.saveTransferStateIfNeeded(state, persistState);
+    const results: UploadResult[] = [];
+
+    try {
+      await this.ensureTransferDirectories(state);
+      for (let index = state.currentIndex; index < state.files.length; index += 1) {
+        const file = state.files[index];
+        if (file.uploaded) {
+          continue;
+        }
+        const remoteParent = path.posix.dirname(file.remotePath);
+        await this.mkdir(remoteParent);
+        const targetDir = await this.mustStat(remoteParent);
+        if (targetDir.size !== -1) {
+          throw new Error(`上传目标必须是目录: ${remoteParent}`);
+        }
+        const uploaded = await this.runRetriedOperation(
+          () => this.api.uploadFile(targetDir.docid, path.posix.basename(file.remotePath), file.localPath),
+          `上传失败: ${file.localPath}`,
+        );
+        results.push(uploaded);
+        file.uploaded = true;
+        state.currentIndex = index + 1;
+        state.uploadedSize += file.size;
+        this.saveTransferStateIfNeeded(state, persistState);
+      }
+    } catch (error) {
+      const wrapped = this.markTransferFailure(state, error, persistState);
+      this.saveTransferStateIfNeeded(state, persistState);
+      throw wrapped;
+    }
+
+    state.status = "completed";
+    state.currentIndex = state.files.length;
+    state.uploadedSize = state.totalSize;
+    if (persistState) {
+      deleteTransferState(state.id);
+    }
+    return results;
+  }
+
+  private async runDownloadTransfer(state: TransferState, persistState: boolean): Promise<void> {
+    this.normalizeTransferState(state);
+    this.saveTransferStateIfNeeded(state, persistState);
+
+    try {
+      await this.ensureTransferDirectories(state);
+      for (let index = state.currentIndex; index < state.files.length; index += 1) {
+        const file = state.files[index];
+        if (file.uploaded) {
+          continue;
+        }
+        const info = await this.mustStat(file.remotePath);
+        if (info.size === -1) {
+          throw new Error(`download 只能用于文件: ${file.remotePath}`);
+        }
+        await this.runRetriedOperation(
+          () => this.api.downloadFile(info.docid, file.localPath),
+          `下载失败: ${file.remotePath}`,
+        );
+        file.uploaded = true;
+        state.currentIndex = index + 1;
+        state.uploadedSize += file.size;
+        this.saveTransferStateIfNeeded(state, persistState);
+      }
+    } catch (error) {
+      const wrapped = this.markTransferFailure(state, error, persistState);
+      this.saveTransferStateIfNeeded(state, persistState);
+      throw wrapped;
+    }
+
+    state.status = "completed";
+    state.currentIndex = state.files.length;
+    state.uploadedSize = state.totalSize;
+    if (persistState) {
+      deleteTransferState(state.id);
+    }
   }
 
   private buildLinkPermissions(isDir: boolean, noDownload: boolean, allowUpload: boolean): string[] {

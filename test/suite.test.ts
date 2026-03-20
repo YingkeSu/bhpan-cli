@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { takeMoveOptions, takeReadOptions, takeRmOptions } from "../src/cli-options.ts";
+import { takeMoveOptions, takeReadOptions, takeRmOptions, takeTransferOptions } from "../src/cli-options.ts";
 import { completeShellLine, printList } from "../src/shell.ts";
 import { filterTree, calculateStats, type TreeNode } from "../src/tree-format.ts";
 
@@ -41,6 +41,28 @@ describe("cli option parsing", () => {
 
   it("rejects mv without a destination after removing flags", () => {
     assert.throws(() => takeMoveOptions(["-f", "/home/code/a.txt"], "mv"), /用法: mv <src> <dst> \[-f\]/);
+  });
+
+  it("parses transfer resume flags and removes them from args", () => {
+    const args = ["--resume", "transfer_123"];
+    assert.deepEqual(takeTransferOptions(args), {
+      resume: "transfer_123",
+      noResume: false,
+    });
+    assert.deepEqual(args, []);
+  });
+
+  it("parses transfer no-resume flag", () => {
+    const args = ["--no-resume", "/home/code/readme.txt"];
+    assert.deepEqual(takeTransferOptions(args), {
+      resume: undefined,
+      noResume: true,
+    });
+    assert.deepEqual(args, ["/home/code/readme.txt"]);
+  });
+
+  it("rejects conflicting transfer resume flags", () => {
+    assert.throws(() => takeTransferOptions(["--resume", "transfer_123", "--no-resume"]), /不能同时指定 --resume 和 --no-resume/);
   });
 });
 

@@ -1,0 +1,139 @@
+import assert from "node:assert/strict";
+import { afterEach, beforeEach, describe, it } from "node:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+import { BhpanClient } from "../src/client.ts";
+import { ApiError } from "../src/network.ts";
+import { loadTransferState, saveTransferState, type TransferState } from "../src/transfer-state.ts";
+
+describe("transfer runtime", () => {
+  let tempDir: string;
+  let originalTransferStateDir: string | undefined;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "bhpan-transfer-runtime-"));
+    originalTransferStateDir = process.env.BHPAN_TRANSFER_STATE;
+    process.env.BHPAN_TRANSFER_STATE = path.join(tempDir, "state");
+  });
+
+  afterEach(() => {
+    process.env.BHPAN_TRANSFER_STATE = originalTransferStateDir;
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it("recreates planned upload directories even when they are empty", async () => {
+    const sourceDir = path.join(tempDir, "archive");
+    fs.mkdirSync(path.join(sourceDir, "empty", "nested"), { recursive: true });
+
+    const mkdirCalls: string[] = [];
+    const client: any = new (BhpanClient as any)({} as any, {});
+    client.mustStat = async () => ({ docid: "dir-doc", size: -1, name: "remote" });
+    client.mkdir = async (remotePath: string) => {
+      mkdirCalls.push(remotePath);
+    };
+
+    const result = await client.upload(sourceDir, "/remote", { persistState: false });
+
+    assert.deepEqual(result.results, []);
+    assert.deepEqual(mkdirCalls, [
+      "/remote/archive",
+      "/remote/archive/empty",
+      "/remote/archive/empty/nested",
+    ]);
+  });
+
+  it("resumes upload from saved state and skips completed files", async () => {
+    const sourceDir = path.join(tempDir, "photos");
+    fs.mkdirSync(sourceDir);
+    const firstFile = path.join(sourceDir, "a.txt");
+    const secondFile = path.join(sourceDir, "b.txt");
+    fs.writeFileSync(firstFile, "a");
+    fs.writeFileSync(secondFile, "b");
+
+    const state: TransferState = {
+      id: "transfer_upload_resume",
+      type: "upload",
+      startTime: Date.now(),
+      directories: ["/remote/photos"],
+      files: [
+        { localPath: firstFile, remotePath: "/remote/photos/a.txt", size: 1, uploaded: true },
+        { localPath: secondFile, remotePath: "/remote/photos/b.txt", size: 1, uploaded: false },
+      ],
+      currentIndex: 1,
+      totalSize: 2,
+      uploadedSize: 1,
+      status: "failed",
+      error: "temporary failure",
+    };
+    saveTransferState(state);
+
+    const uploadCalls: Array<{ docid: string; name: string; localPath: string }> = [];
+    const client: any = new (BhpanClient as any)({} as any, {
+      uploadFile: async (docid: string, name: string, localPath: string) => {
+        uploadCalls.push({ docid, name, localPath });
+        return { docid: `uploaded-${name}`, name };
+      },
+    });
+    client.mkdir = async () => {};
+    client.mustStat = async (remotePath: string) => ({
+      docid: `docid:${remotePath}`,
+      size: -1,
+      name: path.posix.basename(remotePath) || "/",
+    });
+
+    const result = await client.resumeUpload(state.id);
+
+    assert.equal(result.transferId, state.id);
+    assert.deepEqual(result.results, [{ docid: "uploaded-b.txt", name: "b.txt" }]);
+    assert.deepEqual(uploadCalls, [{
+      docid: "docid:/remote/photos",
+      name: "b.txt",
+      localPath: secondFile,
+    }]);
+    assert.equal(loadTransferState(state.id), null);
+  });
+
+  it("retries download operations and deletes saved state after success", async () => {
+    const destinationDir = path.join(tempDir, "downloads");
+    let downloadCalls = 0;
+
+    const client: any = new (BhpanClient as any)({} as any, {
+      listDir: async (docid: string) => {
+        if (docid === "root-doc") {
+          return {
+            dirs: [],
+            files: [{ name: "file.txt", docid: "file-doc", size: 5 }],
+          };
+        }
+        return { dirs: [], files: [] };
+      },
+      downloadFile: async (docid: string, localPath: string) => {
+        assert.equal(docid, "file-doc");
+        downloadCalls += 1;
+        if (downloadCalls === 1) {
+          throw new ApiError("Service Unavailable", 503, {});
+        }
+        fs.mkdirSync(path.dirname(localPath), { recursive: true });
+        fs.writeFileSync(localPath, "hello");
+      },
+    });
+    client.mustStat = async (remotePath: string) => {
+      if (remotePath === "/remote") {
+        return { docid: "root-doc", size: -1, name: "remote" };
+      }
+      if (remotePath === "/remote/file.txt") {
+        return { docid: "file-doc", size: 5, name: "file.txt" };
+      }
+      throw new Error(`unexpected path: ${remotePath}`);
+    };
+
+    const result = await client.download("/remote", destinationDir);
+
+    assert.equal(downloadCalls, 2);
+    assert.equal(fs.readFileSync(path.join(destinationDir, "remote", "file.txt"), "utf8"), "hello");
+    assert.ok(result.transferId);
+    assert.equal(loadTransferState(result.transferId!), null);
+  });
+});

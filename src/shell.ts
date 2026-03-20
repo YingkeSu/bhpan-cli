@@ -13,6 +13,7 @@ import {
   takeMoveOptions,
   takeReadOptions,
   takeRmOptions,
+  takeTransferOptions,
   takeTreeOptions,
 } from "./cli-options.ts";
 import { BhpanClient, clearCredentials, resolveRemotePath } from "./client.ts";
@@ -94,8 +95,8 @@ const VALUE_TAKING_FLAGS: Record<string, Set<string>> = {
   head: new Set(["-n"]),
   tail: new Set(["-n"]),
   link: new Set(["--type", "--expires", "--title", "--limited-times"]),
-  upload: new Set([]),
-  download: new Set([]),
+  upload: new Set(["--resume"]),
+  download: new Set(["--resume"]),
 };
 
 function countPositionalArgs(command: string, args: string[]): number {
@@ -364,12 +365,47 @@ export class PanShell {
         }
         return;
       }
-      case "upload":
-        await printUploadResults(await client.upload(args[0], resolveRemotePath(this.cwd, args[1] || ".")), path.basename(args[0]));
+      case "upload": {
+        const uploadArgs = [...args];
+        const transferOptions = takeTransferOptions(uploadArgs);
+        if (transferOptions.resume) {
+          if (uploadArgs.length) {
+            throw new Error("用法: upload <local> [remote_dir] [--no-resume] 或 upload --resume <transfer_id>");
+          }
+          printUploadResults((await client.resumeUpload(transferOptions.resume)).results);
+          return;
+        }
+        const [localPath, remoteDir] = uploadArgs;
+        if (!localPath) {
+          throw new Error("用法: upload <local> [remote_dir] [--no-resume] 或 upload --resume <transfer_id>");
+        }
+        printUploadResults(
+          (await client.upload(localPath, resolveRemotePath(this.cwd, remoteDir || "."), {
+            persistState: !transferOptions.noResume,
+          })).results,
+          path.basename(localPath),
+        );
         return;
-      case "download":
-        await client.download(resolveRemotePath(this.cwd, args[0]), args[1] || process.cwd());
+      }
+      case "download": {
+        const downloadArgs = [...args];
+        const transferOptions = takeTransferOptions(downloadArgs);
+        if (transferOptions.resume) {
+          if (downloadArgs.length) {
+            throw new Error("用法: download <remote> [local_dir] [--no-resume] 或 download --resume <transfer_id>");
+          }
+          await client.resumeDownload(transferOptions.resume);
+          return;
+        }
+        const [remotePath, localDir] = downloadArgs;
+        if (!remotePath) {
+          throw new Error("用法: download <remote> [local_dir] [--no-resume] 或 download --resume <transfer_id>");
+        }
+        await client.download(resolveRemotePath(this.cwd, remotePath), localDir || process.cwd(), {
+          persistState: !transferOptions.noResume,
+        });
         return;
+      }
       case "mv": {
         const mvArgs = [...args];
         const mvOptions = takeMoveOptions(mvArgs, "mv");
@@ -440,8 +476,10 @@ export class PanShell {
   tail <file> [-n lines]
   touch <file>
   link <show|create|delete> <path> [--type anonymous|realname|all] [--expires days] [-p] [--allow-upload] [--no-download]
-  upload <local> [remote_dir]
-  download <remote> [local_dir]
+  upload <local> [remote_dir] [--no-resume]
+  upload --resume <transfer_id>
+  download <remote> [local_dir] [--no-resume]
+  download --resume <transfer_id>
   whoami
   logout
   su [username]
@@ -681,13 +719,13 @@ export async function printStat(client: BhpanClient, target: string): Promise<vo
   console.log(`modified: ${formatTimestamp(info.modified)}`);
 }
 
-function printUploadResults(results: Array<{ name: string }>, sourceName: string): void {
+function printUploadResults(results: Array<{ name: string }>, sourceName?: string): void {
   if (!results.length) {
     return;
   }
   if (results.length === 1) {
     const [result] = results;
-    if (result.name === sourceName) {
+    if (!sourceName || result.name === sourceName) {
       console.log(`上传完成: ${result.name}`);
     } else {
       console.log(`上传完成: ${sourceName} -> ${result.name}`);

@@ -16,6 +16,7 @@ export interface TransferState {
   id: string;
   type: "upload" | "download";
   startTime: number;
+  directories?: string[];
   files: TransferFile[];
   currentIndex: number;
   totalSize: number;

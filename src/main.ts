@@ -10,12 +10,13 @@ import {
   takeMoveOptions,
   takeReadOptions,
   takeRmOptions,
+  takeTransferOptions,
   takeTreeOptions,
 } from "./cli-options.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { PanShell, printList, printStat } from "./shell.ts";
 
-const VERSION = "0.2.1";
+const VERSION = "0.3.0";
 
 function printHelp(): void {
   console.log(`bhpan
@@ -37,8 +38,10 @@ function printHelp(): void {
   bhpan tail <remote_file> [-n lines]
   bhpan touch <remote_file>
   bhpan link <show|create|delete> <remote_path> [--type anonymous|realname|all] [--expires days] [-p] [--allow-upload] [--no-download]
-  bhpan upload <local_path> <remote_dir>
-  bhpan download <remote_path> [local_dir]
+  bhpan upload <local_path> <remote_dir> [--no-resume]
+  bhpan upload --resume <transfer_id>
+  bhpan download <remote_path> [local_dir] [--no-resume]
+  bhpan download --resume <transfer_id>
 
 说明:
   不带子命令时默认进入交互式 shell。
@@ -146,14 +149,48 @@ async function main(): Promise<void> {
       console.log(created.name);
       return;
     }
-    case "upload":
-      for (const result of await client.upload(args[1], resolveRemotePath("/", args[2]))) {
+    case "upload": {
+      const uploadArgs = args.slice(1);
+      const transferOptions = takeTransferOptions(uploadArgs);
+      if (transferOptions.resume) {
+        if (uploadArgs.length) {
+          throw new Error("用法: bhpan upload <local_path> <remote_dir> [--no-resume] 或 bhpan upload --resume <transfer_id>");
+        }
+        for (const result of (await client.resumeUpload(transferOptions.resume)).results) {
+          console.log(result.name);
+        }
+        return;
+      }
+      const [localPath, remoteDir] = uploadArgs;
+      if (!localPath || !remoteDir) {
+        throw new Error("用法: bhpan upload <local_path> <remote_dir> [--no-resume] 或 bhpan upload --resume <transfer_id>");
+      }
+      for (const result of (await client.upload(localPath, resolveRemotePath("/", remoteDir), {
+        persistState: !transferOptions.noResume,
+      })).results) {
         console.log(result.name);
       }
       return;
-    case "download":
-      await client.download(resolveRemotePath("/", args[1]), args[2] || process.cwd());
+    }
+    case "download": {
+      const downloadArgs = args.slice(1);
+      const transferOptions = takeTransferOptions(downloadArgs);
+      if (transferOptions.resume) {
+        if (downloadArgs.length) {
+          throw new Error("用法: bhpan download <remote_path> [local_dir] [--no-resume] 或 bhpan download --resume <transfer_id>");
+        }
+        await client.resumeDownload(transferOptions.resume);
+        return;
+      }
+      const [remotePath, localDir] = downloadArgs;
+      if (!remotePath) {
+        throw new Error("用法: bhpan download <remote_path> [local_dir] [--no-resume] 或 bhpan download --resume <transfer_id>");
+      }
+      await client.download(resolveRemotePath("/", remotePath), localDir || process.cwd(), {
+        persistState: !transferOptions.noResume,
+      });
       return;
+    }
     case "mv": {
       const mvArgs = args.slice(1);
       const mvOptions = takeMoveOptions(mvArgs, "mv");

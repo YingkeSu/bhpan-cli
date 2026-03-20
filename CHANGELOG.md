@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### 新功能
+
+- `upload` / `download` 接入 `transfer-state` 与 `transfer-plan`，默认在失败后支持 `--resume <transfer_id>` 继续未完成文件
+- 新增 `--no-resume` 选项，可关闭本次传输的状态持久化
+- 传输流程接入 `retryWithBackoff`，对可重试错误自动重试
+
+### 测试
+
+- 新增传输恢复与目录规划回归测试，覆盖空目录创建、失败后恢复、下载重试成功等场景
+
 ## 0.3.0
 
 ### 新功能
