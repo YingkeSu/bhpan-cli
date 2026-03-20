@@ -61,7 +61,7 @@ function normalizeLocalPathPreservingRoot(target: string): string {
 export function buildUploadPlan(
   localPath: string,
   remoteDir: string,
-  options: { filter?: (localPath: string) => boolean; strict?: boolean } = {},
+  options: { filter?: (localPath: string) => boolean; strict?: boolean; rootName?: string } = {},
 ): UploadPlan {
   const directories: string[] = [];
   const files: UploadPlanFile[] = [];
@@ -108,7 +108,7 @@ export function buildUploadPlan(
   }
 
   if (rootStat) {
-    const baseName = path.basename(localPath);
+    const baseName = options.rootName ?? path.basename(localPath);
     const remoteTarget = path.posix.join(normalizedRemoteDir, baseName);
     walk(localPath, remoteTarget);
   }

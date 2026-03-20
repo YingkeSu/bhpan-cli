@@ -9,6 +9,7 @@ export interface TransferFile {
   remotePath: string;
   size: number;
   uploaded: boolean;
+  docid?: string;
   checksum?: string;
 }
 

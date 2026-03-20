@@ -245,7 +245,10 @@ export class BhpanClient {
     }
     const resolvedLocalPath = path.resolve(localPath);
     fs.statSync(resolvedLocalPath);
-    const plan = buildUploadPlan(resolvedLocalPath, remoteDir, { strict: true });
+    const plan = buildUploadPlan(resolvedLocalPath, remoteDir, {
+      strict: true,
+      rootName: path.basename(localPath),
+    });
     const state: TransferState = {
       id: generateTransferId(),
       type: "upload",
@@ -288,6 +291,7 @@ export class BhpanClient {
       startTime: Date.now(),
       directories: plan.directories,
       files: plan.files.map((file) => ({
+        docid: file.docid,
         localPath: file.localPath,
         remotePath: file.remotePath,
         size: file.size,
@@ -770,12 +774,18 @@ export class BhpanClient {
         if (file.uploaded) {
           continue;
         }
-        const info = await this.mustStat(file.remotePath);
-        if (info.size === -1) {
-          throw new Error(`download 只能用于文件: ${file.remotePath}`);
-        }
         await this.runRetriedOperation(
-          () => this.api.downloadFile(info.docid, file.localPath),
+          async () => {
+            let docid = file.docid;
+            if (!docid) {
+              const info = await this.mustStat(file.remotePath);
+              if (info.size === -1) {
+                throw new Error(`download 只能用于文件: ${file.remotePath}`);
+              }
+              docid = info.docid;
+            }
+            await this.api.downloadFile(docid, file.localPath);
+          },
           `下载失败: ${file.remotePath}`,
         );
         file.uploaded = true;

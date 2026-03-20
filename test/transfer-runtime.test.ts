@@ -44,6 +44,46 @@ describe("transfer runtime", () => {
     ]);
   });
 
+  it("preserves upload '.' semantics while persisting absolute file paths", async () => {
+    const workDir = path.join(tempDir, "dot-upload");
+    fs.mkdirSync(workDir);
+    const localFile = path.join(workDir, "note.txt");
+    fs.writeFileSync(localFile, "hello");
+
+    const mkdirCalls: string[] = [];
+    const uploadCalls: Array<{ docid: string; name: string; localPath: string }> = [];
+    const client: any = new (BhpanClient as any)({} as any, {
+      uploadFile: async (docid: string, name: string, uploadPath: string) => {
+        uploadCalls.push({ docid, name, localPath: uploadPath });
+        return { docid: `uploaded-${name}`, name };
+      },
+    });
+    client.mustStat = async (remotePath: string) => ({
+      docid: `docid:${remotePath}`,
+      size: -1,
+      name: path.posix.basename(remotePath) || "/",
+    });
+    client.mkdir = async (remotePath: string) => {
+      mkdirCalls.push(remotePath);
+    };
+
+    const previousCwd = process.cwd();
+    try {
+      process.chdir(workDir);
+      await client.upload(".", "/remote", { persistState: false });
+    } finally {
+      process.chdir(previousCwd);
+    }
+
+    assert.ok(mkdirCalls.includes("/remote"));
+    assert.equal(mkdirCalls.includes(`/remote/${path.basename(workDir)}`), false);
+    assert.deepEqual(uploadCalls, [{
+      docid: "docid:/remote",
+      name: "note.txt",
+      localPath: localFile,
+    }]);
+  });
+
   it("fails upload when the source disappears during planning", async () => {
     const localFile = path.join(tempDir, "transient.txt");
     fs.writeFileSync(localFile, "hello");
@@ -232,6 +272,47 @@ describe("transfer runtime", () => {
     const state = loadTransferState(transferId!);
     assert.ok(state);
     assert.equal(state?.files[0].localPath, path.join(workDir, "report.pdf"));
+  });
+
+  it("resumes download with the saved docid instead of re-resolving the path", async () => {
+    const localFile = path.join(tempDir, "downloads", "report.pdf");
+    const state: TransferState = {
+      id: "transfer_download_resume_docid",
+      type: "download",
+      startTime: Date.now(),
+      directories: [path.dirname(localFile)],
+      files: [
+        {
+          docid: "file-doc",
+          localPath: localFile,
+          remotePath: "/remote/report.pdf",
+          size: 5,
+          uploaded: false,
+        },
+      ],
+      currentIndex: 0,
+      totalSize: 5,
+      uploadedSize: 0,
+      status: "failed",
+      error: "temporary failure",
+    };
+    saveTransferState(state);
+
+    const client: any = new (BhpanClient as any)({} as any, {
+      downloadFile: async (docid: string, downloadPath: string) => {
+        assert.equal(docid, "file-doc");
+        fs.mkdirSync(path.dirname(downloadPath), { recursive: true });
+        fs.writeFileSync(downloadPath, "hello");
+      },
+    });
+    client.mustStat = async () => {
+      throw new Error("mustStat should not be called when a download docid is persisted");
+    };
+
+    await client.resumeDownload(state.id);
+
+    assert.equal(fs.readFileSync(localFile, "utf8"), "hello");
+    assert.equal(loadTransferState(state.id), null);
   });
 
   it("deletes stale state after a later persistence write failure", async () => {
