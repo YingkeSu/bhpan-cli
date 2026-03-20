@@ -44,6 +44,45 @@ describe("transfer runtime", () => {
     ]);
   });
 
+  it("fails upload when the source disappears during planning", async () => {
+    const localFile = path.join(tempDir, "transient.txt");
+    fs.writeFileSync(localFile, "hello");
+
+    const originalStatSync = fs.statSync;
+    let targetStats = 0;
+    Object.defineProperty(fs, "statSync", {
+      value: ((filePath: any, ...args: any[]) => {
+        if (path.resolve(String(filePath)) === localFile) {
+          targetStats += 1;
+          if (targetStats === 2) {
+            const error = new Error(`ENOENT: no such file or directory, stat '${localFile}'`) as NodeJS.ErrnoException;
+            error.code = "ENOENT";
+            throw error;
+          }
+        }
+        return (originalStatSync as any)(filePath, ...args);
+      }) as any,
+      configurable: true,
+      writable: true,
+    });
+
+    try {
+      const client: any = new (BhpanClient as any)({} as any, {});
+      client.mustStat = async () => ({ docid: "dir-doc", size: -1, name: "remote" });
+
+      await assert.rejects(
+        () => client.upload(localFile, "/remote", { persistState: false }),
+        /ENOENT|no such file or directory/,
+      );
+    } finally {
+      Object.defineProperty(fs, "statSync", {
+        value: originalStatSync,
+        configurable: true,
+        writable: true,
+      });
+    }
+  });
+
   it("resumes upload from saved state and skips completed files", async () => {
     const sourceDir = path.join(tempDir, "photos");
     fs.mkdirSync(sourceDir);

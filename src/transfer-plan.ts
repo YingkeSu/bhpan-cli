@@ -61,7 +61,7 @@ function normalizeLocalPathPreservingRoot(target: string): string {
 export function buildUploadPlan(
   localPath: string,
   remoteDir: string,
-  options: { filter?: (localPath: string) => boolean } = {},
+  options: { filter?: (localPath: string) => boolean; strict?: boolean } = {},
 ): UploadPlan {
   const directories: string[] = [];
   const files: UploadPlanFile[] = [];
@@ -71,7 +71,10 @@ export function buildUploadPlan(
     let stat: fs.Stats;
     try {
       stat = fs.statSync(currentLocal);
-    } catch {
+    } catch (error) {
+      if (options.strict) {
+        throw error;
+      }
       return;
     }
     if (stat.isDirectory()) {
@@ -97,7 +100,10 @@ export function buildUploadPlan(
   let rootStat: fs.Stats | null = null;
   try {
     rootStat = fs.statSync(localPath);
-  } catch {
+  } catch (error) {
+    if (options.strict) {
+      throw error;
+    }
     // Path doesn't exist, return empty plan
   }
 

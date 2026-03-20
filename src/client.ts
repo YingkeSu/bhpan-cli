@@ -245,7 +245,7 @@ export class BhpanClient {
     }
     const resolvedLocalPath = path.resolve(localPath);
     fs.statSync(resolvedLocalPath);
-    const plan = buildUploadPlan(resolvedLocalPath, remoteDir);
+    const plan = buildUploadPlan(resolvedLocalPath, remoteDir, { strict: true });
     const state: TransferState = {
       id: generateTransferId(),
       type: "upload",
