@@ -75,7 +75,7 @@ describe("transfer runtime", () => {
       process.chdir(previousCwd);
     }
 
-    assert.ok(mkdirCalls.includes("/remote"));
+    assert.deepEqual(mkdirCalls, ["/remote"]);
     assert.equal(mkdirCalls.includes(`/remote/${path.basename(workDir)}`), false);
     assert.deepEqual(uploadCalls, [{
       docid: "docid:/remote",

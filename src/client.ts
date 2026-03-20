@@ -728,7 +728,6 @@ export class BhpanClient {
           continue;
         }
         const remoteParent = path.posix.dirname(file.remotePath);
-        await this.mkdir(remoteParent);
         const targetDir = await this.mustStat(remoteParent);
         if (targetDir.size !== -1) {
           throw new Error(`上传目标必须是目录: ${remoteParent}`);

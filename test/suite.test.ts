@@ -64,6 +64,15 @@ describe("cli option parsing", () => {
   it("rejects conflicting transfer resume flags", () => {
     assert.throws(() => takeTransferOptions(["--resume", "transfer_123", "--no-resume"]), /不能同时指定 --resume 和 --no-resume/);
   });
+
+  it("rejects missing transfer resume values", () => {
+    assert.throws(() => takeTransferOptions(["--resume"]), /--resume 需要 transfer_id 参数/);
+    assert.throws(() => takeTransferOptions(["--resume", "--bad-flag"]), /--resume 需要 transfer_id 参数/);
+  });
+
+  it("rejects --resume followed by --no-resume", () => {
+    assert.throws(() => takeTransferOptions(["--resume", "--no-resume"]), /不能同时指定 --resume 和 --no-resume/);
+  });
 });
 
 describe("mv -f overwrite behavior (mocked)", () => {

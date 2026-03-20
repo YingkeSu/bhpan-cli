@@ -73,7 +73,21 @@ export function takeTransferOptions(args: string[]): {
   resume?: string;
   noResume: boolean;
 } {
-  const resume = takeFlag(args, "--resume");
+  let resume: string | undefined;
+  const resumeIndex = args.indexOf("--resume");
+  if (resumeIndex !== -1) {
+    const value = args[resumeIndex + 1];
+    if (!value) {
+      throw new Error("--resume 需要 transfer_id 参数");
+    }
+    if (value === "--no-resume") {
+      throw new Error("不能同时指定 --resume 和 --no-resume");
+    }
+    if (value.startsWith("-")) {
+      throw new Error("--resume 需要 transfer_id 参数");
+    }
+    resume = args.splice(resumeIndex, 2)[1];
+  }
   const noResume = takeBooleanFlag(args, "--no-resume");
   if (resume && noResume) {
     throw new Error("不能同时指定 --resume 和 --no-resume");
