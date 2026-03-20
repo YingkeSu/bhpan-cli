@@ -95,6 +95,77 @@ describe("transfer runtime", () => {
     assert.equal(loadTransferState(state.id), null);
   });
 
+  it("stores absolute local paths in saved upload state", async () => {
+    const workDir = path.join(tempDir, "cwd");
+    fs.mkdirSync(workDir);
+    const localFile = path.join(workDir, "report.pdf");
+    fs.writeFileSync(localFile, "content");
+
+    const client: any = new (BhpanClient as any)({} as any, {
+      uploadFile: async () => {
+        throw new Error("upload failed");
+      },
+    });
+    client.mustStat = async () => ({ docid: "dir-doc", size: -1, name: "remote" });
+    client.mkdir = async () => {};
+
+    const previousCwd = process.cwd();
+    let errorMessage = "";
+    try {
+      process.chdir(workDir);
+      await client.upload("./report.pdf", "/remote");
+    } catch (error) {
+      errorMessage = error instanceof Error ? error.message : String(error);
+    } finally {
+      process.chdir(previousCwd);
+    }
+
+    const transferId = errorMessage.match(/--resume (\S+)/)?.[1];
+    assert.ok(transferId);
+    const state = loadTransferState(transferId!);
+    assert.ok(state);
+    assert.equal(state?.files[0].localPath, localFile);
+  });
+
+  it("falls back to non-resumable mode when state persistence fails", async () => {
+    const stateBlocker = path.join(tempDir, "state-blocker");
+    fs.writeFileSync(stateBlocker, "blocked");
+    process.env.BHPAN_TRANSFER_STATE = stateBlocker;
+
+    const localFile = path.join(tempDir, "note.txt");
+    fs.writeFileSync(localFile, "hello");
+
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.join(" "));
+    };
+
+    try {
+      const uploadCalls: Array<{ docid: string; name: string; localPath: string }> = [];
+      const client: any = new (BhpanClient as any)({} as any, {
+        uploadFile: async (docid: string, name: string, uploadPath: string) => {
+          uploadCalls.push({ docid, name, localPath: uploadPath });
+          return { docid: "uploaded-doc", name };
+        },
+      });
+      client.mustStat = async () => ({ docid: "dir-doc", size: -1, name: "remote" });
+      client.mkdir = async () => {};
+
+      const result = await client.upload(localFile, "/remote");
+
+      assert.deepEqual(result.results, [{ docid: "uploaded-doc", name: "note.txt" }]);
+      assert.deepEqual(uploadCalls, [{
+        docid: "dir-doc",
+        name: "note.txt",
+        localPath: localFile,
+      }]);
+      assert.ok(warnings.some((warning) => warning.includes("无法保存传输状态")));
+    } finally {
+      console.warn = originalWarn;
+    }
+  });
+
   it("retries download operations and deletes saved state after success", async () => {
     const destinationDir = path.join(tempDir, "downloads");
     let downloadCalls = 0;

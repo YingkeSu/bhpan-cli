@@ -243,8 +243,9 @@ export class BhpanClient {
     if (targetDir.size !== -1) {
       throw new Error("上传目标必须是目录");
     }
-    fs.statSync(localPath);
-    const plan = buildUploadPlan(localPath, remoteDir);
+    const resolvedLocalPath = path.resolve(localPath);
+    fs.statSync(resolvedLocalPath);
+    const plan = buildUploadPlan(resolvedLocalPath, remoteDir);
     const state: TransferState = {
       id: generateTransferId(),
       type: "upload",
@@ -653,9 +654,17 @@ export class BhpanClient {
     delete state.error;
   }
 
-  private saveTransferStateIfNeeded(state: TransferState, persistState: boolean): void {
-    if (persistState) {
+  private saveTransferStateIfNeeded(state: TransferState, persistState: boolean): boolean {
+    if (!persistState) {
+      return false;
+    }
+    try {
       saveTransferState(state);
+      return true;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`警告: 无法保存传输状态，已回退为不可恢复模式: ${message}`);
+      return false;
     }
   }
 
@@ -690,7 +699,7 @@ export class BhpanClient {
 
   private async runUploadTransfer(state: TransferState, persistState: boolean): Promise<UploadResult[]> {
     this.normalizeTransferState(state);
-    this.saveTransferStateIfNeeded(state, persistState);
+    let shouldPersistState = this.saveTransferStateIfNeeded(state, persistState);
     const results: UploadResult[] = [];
 
     try {
@@ -714,18 +723,18 @@ export class BhpanClient {
         file.uploaded = true;
         state.currentIndex = index + 1;
         state.uploadedSize += file.size;
-        this.saveTransferStateIfNeeded(state, persistState);
+        shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
       }
     } catch (error) {
-      const wrapped = this.markTransferFailure(state, error, persistState);
-      this.saveTransferStateIfNeeded(state, persistState);
+      const wrapped = this.markTransferFailure(state, error, shouldPersistState);
+      shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
       throw wrapped;
     }
 
     state.status = "completed";
     state.currentIndex = state.files.length;
     state.uploadedSize = state.totalSize;
-    if (persistState) {
+    if (shouldPersistState) {
       deleteTransferState(state.id);
     }
     return results;
@@ -733,7 +742,7 @@ export class BhpanClient {
 
   private async runDownloadTransfer(state: TransferState, persistState: boolean): Promise<void> {
     this.normalizeTransferState(state);
-    this.saveTransferStateIfNeeded(state, persistState);
+    let shouldPersistState = this.saveTransferStateIfNeeded(state, persistState);
 
     try {
       await this.ensureTransferDirectories(state);
@@ -753,18 +762,18 @@ export class BhpanClient {
         file.uploaded = true;
         state.currentIndex = index + 1;
         state.uploadedSize += file.size;
-        this.saveTransferStateIfNeeded(state, persistState);
+        shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
       }
     } catch (error) {
-      const wrapped = this.markTransferFailure(state, error, persistState);
-      this.saveTransferStateIfNeeded(state, persistState);
+      const wrapped = this.markTransferFailure(state, error, shouldPersistState);
+      shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
       throw wrapped;
     }
 
     state.status = "completed";
     state.currentIndex = state.files.length;
     state.uploadedSize = state.totalSize;
-    if (persistState) {
+    if (shouldPersistState) {
       deleteTransferState(state.id);
     }
   }

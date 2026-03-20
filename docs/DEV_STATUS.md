@@ -71,7 +71,7 @@
 ## 已验证行为
 
 - 本地验证通过：
-  - `npm test`（83 个测试全部通过）
+  - `npm test`（85 个测试全部通过）
   - `npm run typecheck`
   - `npm run build`
 - 发布链路验证通过：
