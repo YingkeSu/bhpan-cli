@@ -154,6 +154,19 @@ describe("buildDownloadPlan", () => {
     assert.equal(plan.totalSize, 100);
   });
 
+  it("preserves filesystem root as an absolute download destination", async () => {
+    const listDir: ListDirFn = async () => ({ dirs: [], files: [] });
+    const rootDir = path.parse(path.normalize("/")).root || path.normalize("/");
+
+    const plan = await buildDownloadPlan("/remote/file.txt", rootDir, listDir, {
+      getRootInfo: async () => ({ docid: "file-doc", size: 100 }),
+    });
+
+    assert.equal(plan.files.length, 1);
+    assert.equal(plan.files[0].localPath, path.join(rootDir, "file.txt"));
+    assert.equal(path.isAbsolute(plan.files[0].localPath), true);
+  });
+
   it("creates plan for directory with nested files", async () => {
     const listDir: ListDirFn = async (docid: string) => {
       if (docid === "root-doc") {

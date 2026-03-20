@@ -278,7 +278,8 @@ export class BhpanClient {
 
   async download(remotePath: string, localDir: string, options: { persistState?: boolean } = {}): Promise<TransferCommandResult> {
     const info = await this.mustStat(remotePath);
-    const plan = await buildDownloadPlan(remotePath, localDir, (docid) => this.api.listDir(docid, { by: "name" }), {
+    const resolvedLocalDir = path.resolve(localDir);
+    const plan = await buildDownloadPlan(remotePath, resolvedLocalDir, (docid) => this.api.listDir(docid, { by: "name" }), {
       getRootInfo: async () => ({ docid: info.docid, size: info.size }),
     });
     const state: TransferState = {
@@ -668,6 +669,18 @@ export class BhpanClient {
     }
   }
 
+  private cleanupTransferState(stateId: string, hasPersistedState: boolean): void {
+    if (!hasPersistedState) {
+      return;
+    }
+    try {
+      deleteTransferState(stateId);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`警告: 无法清理传输状态 ${stateId}: ${message}`);
+    }
+  }
+
   private async ensureTransferDirectories(state: TransferState): Promise<void> {
     for (const directory of state.directories || []) {
       if (state.type === "upload") {
@@ -700,6 +713,7 @@ export class BhpanClient {
   private async runUploadTransfer(state: TransferState, persistState: boolean): Promise<UploadResult[]> {
     this.normalizeTransferState(state);
     let shouldPersistState = this.saveTransferStateIfNeeded(state, persistState);
+    let hasPersistedState = shouldPersistState;
     const results: UploadResult[] = [];
 
     try {
@@ -724,25 +738,30 @@ export class BhpanClient {
         state.currentIndex = index + 1;
         state.uploadedSize += file.size;
         shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
+        if (shouldPersistState) {
+          hasPersistedState = true;
+        }
       }
     } catch (error) {
       const wrapped = this.markTransferFailure(state, error, shouldPersistState);
       shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
+      if (shouldPersistState) {
+        hasPersistedState = true;
+      }
       throw wrapped;
     }
 
     state.status = "completed";
     state.currentIndex = state.files.length;
     state.uploadedSize = state.totalSize;
-    if (shouldPersistState) {
-      deleteTransferState(state.id);
-    }
+    this.cleanupTransferState(state.id, hasPersistedState);
     return results;
   }
 
   private async runDownloadTransfer(state: TransferState, persistState: boolean): Promise<void> {
     this.normalizeTransferState(state);
     let shouldPersistState = this.saveTransferStateIfNeeded(state, persistState);
+    let hasPersistedState = shouldPersistState;
 
     try {
       await this.ensureTransferDirectories(state);
@@ -763,19 +782,23 @@ export class BhpanClient {
         state.currentIndex = index + 1;
         state.uploadedSize += file.size;
         shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
+        if (shouldPersistState) {
+          hasPersistedState = true;
+        }
       }
     } catch (error) {
       const wrapped = this.markTransferFailure(state, error, shouldPersistState);
       shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
+      if (shouldPersistState) {
+        hasPersistedState = true;
+      }
       throw wrapped;
     }
 
     state.status = "completed";
     state.currentIndex = state.files.length;
     state.uploadedSize = state.totalSize;
-    if (shouldPersistState) {
-      deleteTransferState(state.id);
-    }
+    this.cleanupTransferState(state.id, hasPersistedState);
   }
 
   private buildLinkPermissions(isDir: boolean, noDownload: boolean, allowUpload: boolean): string[] {
