@@ -356,6 +356,66 @@ describe("transfer runtime", () => {
     }
   });
 
+  it("deletes stale state when persistence later fails and the transfer then fails", async () => {
+    const sourceDir = path.join(tempDir, "stale-failure");
+    fs.mkdirSync(sourceDir);
+    fs.writeFileSync(path.join(sourceDir, "a.txt"), "a");
+    fs.writeFileSync(path.join(sourceDir, "b.txt"), "b");
+
+    const originalWriteFileSync = fs.writeFileSync;
+    let stateWriteCount = 0;
+    fs.writeFileSync = ((...args: any[]) => {
+      const [filePath] = args;
+      if (typeof filePath === "string" && filePath.endsWith(".json")) {
+        stateWriteCount += 1;
+        if (stateWriteCount === 2) {
+          throw new Error("state write failed");
+        }
+      }
+      return (originalWriteFileSync as any)(...args);
+    }) as any;
+
+    const warnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      warnings.push(args.join(" "));
+    };
+
+    try {
+      let uploadCalls = 0;
+      const client: any = new (BhpanClient as any)({} as any, {
+        uploadFile: async (docid: string, name: string) => {
+          uploadCalls += 1;
+          if (uploadCalls === 2) {
+            throw new Error(`upload failed: ${name}`);
+          }
+          return { docid: `uploaded-${docid}`, name };
+        },
+      });
+      client.mustStat = async (remotePath: string) => ({
+        docid: `docid:${remotePath}`,
+        size: -1,
+        name: path.posix.basename(remotePath) || "/",
+      });
+      client.mkdir = async () => {};
+
+      await assert.rejects(
+        () => client.upload(sourceDir, "/remote"),
+        /upload failed: b.txt/,
+      );
+
+      const stateDir = process.env.BHPAN_TRANSFER_STATE!;
+      const stateFiles = fs.existsSync(stateDir)
+        ? fs.readdirSync(stateDir).filter((file) => file.endsWith(".json"))
+        : [];
+      assert.deepEqual(stateFiles, []);
+      assert.ok(warnings.some((warning) => warning.includes("无法保存传输状态")));
+    } finally {
+      fs.writeFileSync = originalWriteFileSync;
+      console.warn = originalWarn;
+    }
+  });
+
   it("retries download operations and deletes saved state after success", async () => {
     const destinationDir = path.join(tempDir, "downloads");
     let downloadCalls = 0;

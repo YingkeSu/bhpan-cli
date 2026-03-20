@@ -673,16 +673,28 @@ export class BhpanClient {
     }
   }
 
-  private cleanupTransferState(stateId: string, hasPersistedState: boolean): void {
+  private cleanupTransferState(stateId: string, hasPersistedState: boolean): boolean {
     if (!hasPersistedState) {
-      return;
+      return true;
     }
     try {
       deleteTransferState(stateId);
+      return true;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       console.warn(`警告: 无法清理传输状态 ${stateId}: ${message}`);
+      return false;
     }
+  }
+
+  private updatePersistedStateStatus(stateId: string, shouldPersistState: boolean, hasPersistedState: boolean): boolean {
+    if (shouldPersistState) {
+      return true;
+    }
+    if (!hasPersistedState) {
+      return false;
+    }
+    return !this.cleanupTransferState(stateId, true);
   }
 
   private async ensureTransferDirectories(state: TransferState): Promise<void> {
@@ -717,7 +729,7 @@ export class BhpanClient {
   private async runUploadTransfer(state: TransferState, persistState: boolean): Promise<UploadResult[]> {
     this.normalizeTransferState(state);
     let shouldPersistState = this.saveTransferStateIfNeeded(state, persistState);
-    let hasPersistedState = shouldPersistState;
+    let hasPersistedState = this.updatePersistedStateStatus(state.id, shouldPersistState, false);
     const results: UploadResult[] = [];
 
     try {
@@ -741,16 +753,12 @@ export class BhpanClient {
         state.currentIndex = index + 1;
         state.uploadedSize += file.size;
         shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
-        if (shouldPersistState) {
-          hasPersistedState = true;
-        }
+        hasPersistedState = this.updatePersistedStateStatus(state.id, shouldPersistState, hasPersistedState);
       }
     } catch (error) {
       const wrapped = this.markTransferFailure(state, error, shouldPersistState);
       shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
-      if (shouldPersistState) {
-        hasPersistedState = true;
-      }
+      hasPersistedState = this.updatePersistedStateStatus(state.id, shouldPersistState, hasPersistedState);
       throw wrapped;
     }
 
@@ -764,7 +772,7 @@ export class BhpanClient {
   private async runDownloadTransfer(state: TransferState, persistState: boolean): Promise<void> {
     this.normalizeTransferState(state);
     let shouldPersistState = this.saveTransferStateIfNeeded(state, persistState);
-    let hasPersistedState = shouldPersistState;
+    let hasPersistedState = this.updatePersistedStateStatus(state.id, shouldPersistState, false);
 
     try {
       await this.ensureTransferDirectories(state);
@@ -791,16 +799,12 @@ export class BhpanClient {
         state.currentIndex = index + 1;
         state.uploadedSize += file.size;
         shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
-        if (shouldPersistState) {
-          hasPersistedState = true;
-        }
+        hasPersistedState = this.updatePersistedStateStatus(state.id, shouldPersistState, hasPersistedState);
       }
     } catch (error) {
       const wrapped = this.markTransferFailure(state, error, shouldPersistState);
       shouldPersistState = this.saveTransferStateIfNeeded(state, shouldPersistState);
-      if (shouldPersistState) {
-        hasPersistedState = true;
-      }
+      hasPersistedState = this.updatePersistedStateStatus(state.id, shouldPersistState, hasPersistedState);
       throw wrapped;
     }
 
