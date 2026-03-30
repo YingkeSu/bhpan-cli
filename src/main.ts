@@ -10,12 +10,48 @@ import {
   takeMoveOptions,
   takeReadOptions,
   takeRmOptions,
+  takeTransferCleanOptions,
+  takeTransferListOptions,
+  takeTransferOptions,
   takeTreeOptions,
 } from "./cli-options.ts";
 import { loadConfig, saveConfig } from "./config.ts";
 import { PanShell, printList, printStat } from "./shell.ts";
+import {
+  listTransferStates,
+  loadTransferState,
+  deleteTransferState,
+  cleanOldTransferStates,
+  type TransferState,
+} from "./transfer-state.ts";
 
-const VERSION = "0.2.1";
+const VERSION = "0.3.0";
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  return `${(bytes / Math.pow(1024, i)).toFixed(2)} ${units[i]}`;
+}
+
+function printTransferState(state: TransferState): void {
+  console.log(`ID: ${state.id}`);
+  console.log(`类型: ${state.type === "upload" ? "上传" : "下载"}`);
+  console.log(`状态: ${state.status}`);
+  console.log(`开始时间: ${new Date(state.startTime).toLocaleString()}`);
+  console.log(`总大小: ${formatBytes(state.totalSize)}`);
+  console.log(`已传输: ${formatBytes(state.uploadedSize)} (${Math.round(state.totalSize > 0 ? (state.uploadedSize / state.totalSize) * 100 : 0)}%)`);
+  console.log(`文件数: ${state.files.length}`);
+  console.log(`已完成: ${state.files.filter(f => f.uploaded).length}/${state.files.length}`);
+  if (state.error) {
+    console.log(`错误: ${state.error}`);
+  }
+  console.log("\n文件列表:");
+  for (const file of state.files) {
+    const status = file.uploaded ? "✓" : "○";
+    console.log(`  ${status} ${file.localPath} -> ${file.remotePath} (${formatBytes(file.size)})`);
+  }
+}
 
 function printHelp(): void {
   console.log(`bhpan
@@ -37,8 +73,14 @@ function printHelp(): void {
   bhpan tail <remote_file> [-n lines]
   bhpan touch <remote_file>
   bhpan link <show|create|delete> <remote_path> [--type anonymous|realname|all] [--expires days] [-p] [--allow-upload] [--no-download]
-  bhpan upload <local_path> <remote_dir>
-  bhpan download <remote_path> [local_dir]
+  bhpan upload <local_path> <remote_dir> [--no-resume]
+  bhpan upload --resume <transfer_id>
+  bhpan download <remote_path> [local_dir] [--no-resume]
+  bhpan download --resume <transfer_id>
+  bhpan transfer list [--status all|in_progress|completed|failed]
+  bhpan transfer show <transfer_id>
+  bhpan transfer clean [--older-than days] [--status failed|completed] [--all]
+  bhpan transfer remove <transfer_id>
 
 说明:
   不带子命令时默认进入交互式 shell。
@@ -146,14 +188,48 @@ async function main(): Promise<void> {
       console.log(created.name);
       return;
     }
-    case "upload":
-      for (const result of await client.upload(args[1], resolveRemotePath("/", args[2]))) {
+    case "upload": {
+      const uploadArgs = args.slice(1);
+      const transferOptions = takeTransferOptions(uploadArgs);
+      if (transferOptions.resume) {
+        if (uploadArgs.length) {
+          throw new Error("用法: bhpan upload <local_path> <remote_dir> [--no-resume] 或 bhpan upload --resume <transfer_id>");
+        }
+        for (const result of (await client.resumeUpload(transferOptions.resume)).results) {
+          console.log(result.name);
+        }
+        return;
+      }
+      const [localPath, remoteDir] = uploadArgs;
+      if (!localPath || !remoteDir) {
+        throw new Error("用法: bhpan upload <local_path> <remote_dir> [--no-resume] 或 bhpan upload --resume <transfer_id>");
+      }
+      for (const result of (await client.upload(localPath, resolveRemotePath("/", remoteDir), {
+        persistState: !transferOptions.noResume,
+      })).results) {
         console.log(result.name);
       }
       return;
-    case "download":
-      await client.download(resolveRemotePath("/", args[1]), args[2] || process.cwd());
+    }
+    case "download": {
+      const downloadArgs = args.slice(1);
+      const transferOptions = takeTransferOptions(downloadArgs);
+      if (transferOptions.resume) {
+        if (downloadArgs.length) {
+          throw new Error("用法: bhpan download <remote_path> [local_dir] [--no-resume] 或 bhpan download --resume <transfer_id>");
+        }
+        await client.resumeDownload(transferOptions.resume);
+        return;
+      }
+      const [remotePath, localDir] = downloadArgs;
+      if (!remotePath) {
+        throw new Error("用法: bhpan download <remote_path> [local_dir] [--no-resume] 或 bhpan download --resume <transfer_id>");
+      }
+      await client.download(resolveRemotePath("/", remotePath), localDir || process.cwd(), {
+        persistState: !transferOptions.noResume,
+      });
       return;
+    }
     case "mv": {
       const mvArgs = args.slice(1);
       const mvOptions = takeMoveOptions(mvArgs, "mv");
@@ -225,6 +301,98 @@ async function main(): Promise<void> {
         return;
       }
       throw new Error("用法: bhpan link <show|create|delete> <remote_path> [--type anonymous|realname|all] [--expires days] [-p] [--allow-upload] [--no-download]");
+    }
+    case "transfer": {
+      const transferCmdArgs = args.slice(1);
+      const subCommand = transferCmdArgs[0];
+      
+      if (subCommand === "list") {
+        const listArgs = transferCmdArgs.slice(1);
+        const listOptions = takeTransferListOptions(listArgs);
+        const states = listTransferStates();
+        
+        const filtered = listOptions.status === "all" 
+          ? states 
+          : states.filter(s => s.status === listOptions.status);
+        
+        if (filtered.length === 0) {
+          console.log("没有找到传输状态");
+          return;
+        }
+        
+        for (const state of filtered) {
+          const progress = `${state.uploadedSize}/${state.totalSize}`;
+          const time = new Date(state.startTime).toLocaleString();
+          console.log(`${state.id}\t${state.type}\t${state.status}\t${progress}\t${time}`);
+        }
+        return;
+      }
+      
+      if (subCommand === "show") {
+        const transferId = transferCmdArgs[1];
+        if (!transferId) {
+          throw new Error("用法: bhpan transfer show <transfer_id>");
+        }
+        const state = loadTransferState(transferId);
+        if (!state) {
+          throw new Error(`未找到传输状态: ${transferId}`);
+        }
+        printTransferState(state);
+        return;
+      }
+      
+      if (subCommand === "clean") {
+        const cleanArgs = transferCmdArgs.slice(1);
+        const cleanOptions = takeTransferCleanOptions(cleanArgs);
+        
+        if (cleanOptions.all) {
+          const states = listTransferStates();
+          for (const state of states) {
+            deleteTransferState(state.id);
+          }
+          console.log(`已清理 ${states.length} 个传输状态`);
+          return;
+        }
+        
+        if (cleanOptions.transferId) {
+          deleteTransferState(cleanOptions.transferId);
+          console.log(`已删除传输状态: ${cleanOptions.transferId}`);
+          return;
+        }
+        
+        const maxAgeMs = cleanOptions.olderThanDays !== undefined 
+          ? cleanOptions.olderThanDays * 24 * 60 * 60 * 1000 
+          : 7 * 24 * 60 * 60 * 1000;
+        
+        let cleaned = 0;
+        const states = listTransferStates();
+        for (const state of states) {
+          const matchesStatus = !cleanOptions.status || state.status === cleanOptions.status;
+          const isOld = Date.now() - state.startTime > maxAgeMs;
+          if (matchesStatus && isOld) {
+            deleteTransferState(state.id);
+            cleaned++;
+          }
+        }
+        console.log(`已清理 ${cleaned} 个传输状态`);
+        return;
+      }
+      
+      if (subCommand === "remove") {
+        const transferId = transferCmdArgs[1];
+        if (!transferId) {
+          throw new Error("用法: bhpan transfer remove <transfer_id>");
+        }
+        const state = loadTransferState(transferId);
+        if (!state) {
+          throw new Error(`未找到传输状态: ${transferId}`);
+        }
+        deleteTransferState(transferId);
+        console.log(`已删除传输状态: ${transferId}`);
+        return;
+      }
+      
+      throw new Error("用法: bhpan transfer <list|show|clean|remove> [...]");
     }
     default:
       printHelp();

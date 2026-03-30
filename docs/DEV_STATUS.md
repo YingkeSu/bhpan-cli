@@ -1,6 +1,6 @@
 # 开发状态
 
-最后更新：2026-03-19 00:00 UTC
+最后更新：2026-03-20 00:00 UTC
 
 ## 当前总结
 
@@ -10,7 +10,7 @@
 - `main` 分支当前停在 `309acb4`（`v0.3.0` 发布）。
 - 已公开发布的最新 npm 版本是 `bhpan-cli@0.3.0`，对应 commit `309acb4`，tag `v0.3.0` 已推送到 GitHub。
 - GitHub PR `#3` 已合并：<https://github.com/YingkeSu/bhpan-cli/pull/3>，包含 v0.3.0 的所有新功能。
-- 工作目录干净，无未提交的更改。
+- `upload` / `download` 已接入文件级恢复能力：默认保存传输状态，失败后可用 `--resume <transfer_id>` 继续未完成文件。
 
 ## 已完成工作
 
@@ -38,6 +38,14 @@
 - `src/retry.ts`: 指数退避重试工具
 - `src/transfer-state.ts`: 传输状态持久化（用于断点续传）
 
+### 传输链路新进展
+
+- `upload` / `download` 现在基于 `transfer-plan` 执行文件级传输计划。
+- 传输过程默认保存状态文件；失败后提示 `transfer_id`，可用 `--resume <transfer_id>` 继续。
+- `--no-resume` 可关闭本次传输状态持久化。
+- 传输操作已接入 `retryWithBackoff`，对可重试错误自动重试。
+- 目录传输会预先创建计划中的空目录，避免恢复后丢失空目录结构。
+
 **修复**
 - `fetchTreeNodes` 现在复制 `entry.size` 到 `TreeNode`，修复 `tree --stats` 显示大小为 0 的问题
 - `filterTree` 先应用 `excludeRegex` 再应用 `includeRegex`，修复两者同时使用时 exclude 无效的问题
@@ -63,9 +71,8 @@
 ## 已验证行为
 
 - 本地验证通过：
-  - `npm test`（22 个测试全部通过）
+  - `npm test`（102 个测试全部通过）
   - `npm run typecheck`
-  - `npm run check`
   - `npm run build`
 - 发布链路验证通过：
   - `git push origin main`
@@ -124,14 +131,36 @@ sleep 600 && gh pr view --repo YingkeSu/bhpan-cli --json reviewDecision
 
 - `mv` / `cp` 不支持使用 `-f` 直接覆盖目录；目标是目录时需手动删除。
 - `tree` 对深层目录做全量递归，执行时间较长。
-- 大文件上传/下载、递归目录传输、异常中断恢复未系统性验证。
-- `retry.ts` 和 `transfer-state.ts` 是基础设施，尚未集成到 upload/download 流程。
+- 大文件上传/下载的分块传输与真正的字节级断点续传尚未实现；当前恢复粒度是"按文件跳过已完成项"。
+- 真实站点上的长时间传输、异常中断恢复仍缺少系统性联调。
+
+## 新增功能
+
+### 传输状态管理 CLI
+
+新增 `transfer` 子命令用于管理传输状态：
+
+```bash
+# 列出所有传输状态
+bhpan transfer list
+bhpan transfer list --status failed
+
+# 查看传输详情
+bhpan transfer show transfer_1234567890_abcdefghi
+
+# 清理旧传输状态
+bhpan transfer clean --older-than 7
+bhpan transfer clean --status failed
+bhpan transfer clean --all
+
+# 删除指定传输状态
+bhpan transfer remove transfer_1234567890_abcdefghi
+```
 
 ## 下一步
 
 1. **完善基础设施**：
-   - 将 `retry.ts` 集成到 upload/download 操作
-   - 将 `transfer-state.ts` 集成到传输流程，支持断点续传
+   - 将 `transfer-state.ts` 扩展到分块级断点续传，而不是当前的文件级恢复
 2. **增强功能**：
    - 递归目录上传/下载
    - 大文件分块传输

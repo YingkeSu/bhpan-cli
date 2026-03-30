@@ -9,6 +9,7 @@ export interface UploadPlanFile {
 
 export interface UploadPlan {
   type: "upload";
+  directories: string[];
   files: UploadPlanFile[];
   totalSize: number;
 }
@@ -22,6 +23,7 @@ export interface DownloadPlanFile {
 
 export interface DownloadPlan {
   type: "download";
+  directories: string[];
   files: DownloadPlanFile[];
   totalSize: number;
 }
@@ -42,26 +44,45 @@ export interface RemoteWalkEntry {
 
 export type ListDirFn = (docid: string) => Promise<ListDirResult>;
 
+function normalizePosixPathPreservingRoot(target: string): string {
+  const normalized = path.posix.normalize(target);
+  return normalized === "/" ? "/" : normalized.replace(/\/+$/, "");
+}
+
+function normalizeLocalPathPreservingRoot(target: string): string {
+  const normalized = path.normalize(target);
+  const root = path.parse(normalized).root;
+  if (normalized === root) {
+    return normalized;
+  }
+  return normalized.replace(/[\\/]+$/, "");
+}
+
 export function buildUploadPlan(
   localPath: string,
   remoteDir: string,
-  options: { filter?: (localPath: string) => boolean } = {},
+  options: { filter?: (localPath: string) => boolean; strict?: boolean; rootName?: string } = {},
 ): UploadPlan {
+  const directories: string[] = [];
   const files: UploadPlanFile[] = [];
-  const normalizedRemoteDir = remoteDir.replace(/\/+$/, "");
+  const normalizedRemoteDir = normalizePosixPathPreservingRoot(remoteDir);
 
   function walk(currentLocal: string, currentRemote: string): void {
     let stat: fs.Stats;
     try {
       stat = fs.statSync(currentLocal);
-    } catch {
+    } catch (error) {
+      if (options.strict) {
+        throw error;
+      }
       return;
     }
     if (stat.isDirectory()) {
+      directories.push(currentRemote);
       const entries = fs.readdirSync(currentLocal);
       for (const entry of entries) {
         const childLocal = path.join(currentLocal, entry);
-        const childRemote = `${currentRemote}/${entry}`;
+        const childRemote = path.posix.join(currentRemote, entry);
         walk(childLocal, childRemote);
       }
     } else if (stat.isFile()) {
@@ -79,22 +100,27 @@ export function buildUploadPlan(
   let rootStat: fs.Stats | null = null;
   try {
     rootStat = fs.statSync(localPath);
-  } catch {
+  } catch (error) {
+    if (options.strict) {
+      throw error;
+    }
     // Path doesn't exist, return empty plan
   }
 
   if (rootStat) {
-    const baseName = path.basename(localPath);
-    const remoteTarget = `${normalizedRemoteDir}/${baseName}`;
+    const baseName = options.rootName ?? path.basename(localPath);
+    const remoteTarget = path.posix.join(normalizedRemoteDir, baseName);
     walk(localPath, remoteTarget);
   }
 
+  directories.sort((a, b) => a.localeCompare(b, "en"));
   files.sort((a, b) => a.localPath.localeCompare(b.localPath, "en"));
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return {
     type: "upload",
+    directories,
     files,
     totalSize,
   };
@@ -109,15 +135,16 @@ export async function buildDownloadPlan(
     filter?: (remotePath: string) => boolean;
   } = {},
 ): Promise<DownloadPlan> {
+  const directories: string[] = [];
   const files: DownloadPlanFile[] = [];
-  const normalizedRemotePath = remotePath.replace(/\/+$/, "");
-  const normalizedLocalDir = localDir.replace(/\/+$/, "");
+  const normalizedRemotePath = normalizePosixPathPreservingRoot(remotePath);
+  const normalizedLocalDir = normalizeLocalPathPreservingRoot(localDir);
 
   async function walk(currentRemote: string, currentLocal: string, docid: string): Promise<void> {
     const { dirs, files: dirFiles } = await listDir(docid);
 
     for (const file of dirFiles) {
-      const fileRemotePath = `${currentRemote}/${file.name}`;
+      const fileRemotePath = path.posix.join(currentRemote, file.name);
       if (options.filter && !options.filter(fileRemotePath)) {
         continue;
       }
@@ -130,8 +157,9 @@ export async function buildDownloadPlan(
     }
 
     for (const dir of dirs) {
-      const dirRemotePath = `${currentRemote}/${dir.name}`;
+      const dirRemotePath = path.posix.join(currentRemote, dir.name);
       const dirLocalPath = path.join(currentLocal, dir.name);
+      directories.push(dirLocalPath);
       await walk(dirRemotePath, dirLocalPath, dir.docid);
     }
   }
@@ -153,16 +181,19 @@ export async function buildDownloadPlan(
     }
   } else if (rootInfo) {
     const baseName = path.posix.basename(normalizedRemotePath);
-    const rootLocalPath = normalizedRemotePath === "" ? normalizedLocalDir : path.join(normalizedLocalDir, baseName);
+    const rootLocalPath = normalizedRemotePath === "/" ? normalizedLocalDir : path.join(normalizedLocalDir, baseName);
+    directories.push(rootLocalPath);
     await walk(normalizedRemotePath, rootLocalPath, rootInfo.docid);
   }
 
+  directories.sort((a, b) => a.localeCompare(b, "en"));
   files.sort((a, b) => a.remotePath.localeCompare(b.remotePath, "en"));
 
   const totalSize = files.reduce((sum, f) => sum + f.size, 0);
 
   return {
     type: "download",
+    directories,
     files,
     totalSize,
   };

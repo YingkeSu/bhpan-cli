@@ -56,6 +56,7 @@ describe("buildUploadPlan", () => {
     const paths = plan.files.map((f) => f.remotePath);
     assert.ok(paths.includes("/remote/mydir/file1.txt"));
     assert.ok(paths.includes("/remote/mydir/subdir/file2.txt"));
+    assert.deepEqual(plan.directories, ["/remote/mydir", "/remote/mydir/subdir"]);
   });
 
   it("sorts files by local path", () => {
@@ -110,6 +111,20 @@ describe("buildUploadPlan", () => {
     assert.equal(plan.files.length, 1);
     assert.equal(plan.files[0].remotePath, "/backup/photos/image.jpg");
   });
+
+  it("tracks empty directories for later creation", () => {
+    const srcDir = path.join(tempDir, "archive");
+    fs.mkdirSync(path.join(srcDir, "empty", "nested"), { recursive: true });
+
+    const plan = buildUploadPlan(srcDir, "/backup");
+
+    assert.deepEqual(plan.directories, [
+      "/backup/archive",
+      "/backup/archive/empty",
+      "/backup/archive/empty/nested",
+    ]);
+    assert.equal(plan.files.length, 0);
+  });
 });
 
 describe("buildDownloadPlan", () => {
@@ -139,6 +154,19 @@ describe("buildDownloadPlan", () => {
     assert.equal(plan.totalSize, 100);
   });
 
+  it("preserves filesystem root as an absolute download destination", async () => {
+    const listDir: ListDirFn = async () => ({ dirs: [], files: [] });
+    const rootDir = path.parse(path.normalize("/")).root || path.normalize("/");
+
+    const plan = await buildDownloadPlan("/remote/file.txt", rootDir, listDir, {
+      getRootInfo: async () => ({ docid: "file-doc", size: 100 }),
+    });
+
+    assert.equal(plan.files.length, 1);
+    assert.equal(plan.files[0].localPath, path.join(rootDir, "file.txt"));
+    assert.equal(path.isAbsolute(plan.files[0].localPath), true);
+  });
+
   it("creates plan for directory with nested files", async () => {
     const listDir: ListDirFn = async (docid: string) => {
       if (docid === "root-doc") {
@@ -166,6 +194,7 @@ describe("buildDownloadPlan", () => {
     const paths = plan.files.map((f) => f.remotePath);
     assert.ok(paths.includes("/remote/file1.txt"));
     assert.ok(paths.includes("/remote/subdir/file2.txt"));
+    assert.deepEqual(plan.directories, [path.join("/local", "remote"), path.join("/local", "remote", "subdir")]);
   });
 
   it("sorts files by remote path", async () => {
@@ -213,6 +242,25 @@ describe("buildDownloadPlan", () => {
       getRootInfo: async () => null,
     });
 
+    assert.equal(plan.files.length, 0);
+  });
+
+  it("tracks empty download directories", async () => {
+    const listDir: ListDirFn = async (docid: string) => {
+      if (docid === "root-doc") {
+        return {
+          dirs: [{ name: "empty", docid: "empty-doc", size: -1 }],
+          files: [],
+        };
+      }
+      return { dirs: [], files: [] };
+    };
+
+    const plan = await buildDownloadPlan("/remote", "/local", listDir, {
+      getRootInfo: async () => ({ docid: "root-doc", size: -1 }),
+    });
+
+    assert.deepEqual(plan.directories, [path.join("/local", "remote"), path.join("/local", "remote", "empty")]);
     assert.equal(plan.files.length, 0);
   });
 });

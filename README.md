@@ -28,7 +28,7 @@
 
 ## 当前版本
 
-- 版本：`0.2.1`
+- 版本：`0.3.0`
 - 运行时：Node `>= 22`
 - npm 包名：`bhpan-cli`
 - CLI 命令：`bhpan`
@@ -44,7 +44,7 @@
 - `mv`、`cp`
 - `cat`、`head`、`tail`
 - `touch`
-- 上传、下载
+- 上传、下载（支持失败后 `--resume <transfer_id>` 继续）
 - 匿名分享与实名分享
 - 单次 CLI 与交互式 shell
 
@@ -108,6 +108,13 @@ bhpan upload ./report.pdf /home/code
 bhpan download /home/code/report.pdf .
 ```
 
+恢复失败的传输：
+
+```bash
+bhpan upload --resume transfer_1234567890_abcdefghi
+bhpan download --resume transfer_1234567890_abcdefghi
+```
+
 进入交互式 shell：
 
 ```bash
@@ -139,8 +146,14 @@ bhpan head <remote_file> [-n lines]
 bhpan tail <remote_file> [-n lines]
 bhpan touch <remote_file>
 bhpan link <show|create|delete> <remote_path> [--type anonymous|realname|all] [--expires days] [-p] [--allow-upload] [--no-download]
-bhpan upload <local_path> <remote_dir>
-bhpan download <remote_path> [local_dir]
+bhpan upload <local_path> <remote_dir> [--no-resume]
+bhpan upload --resume <transfer_id>
+bhpan download <remote_path> [local_dir] [--no-resume]
+bhpan download --resume <transfer_id>
+bhpan transfer list [--status all|in_progress|completed|failed]
+bhpan transfer show <transfer_id>
+bhpan transfer clean [--older-than days] [--status failed|completed] [--all]
+bhpan transfer remove <transfer_id>
 ```
 
 完整说明请直接运行：
@@ -215,6 +228,13 @@ bhpan tree /home -L 4 --regex '.*report.*'
 - `ls -R` 递归列出所有文件和目录，显示完整逻辑路径
 - `--regex` 使用 JavaScript 正则表达式匹配完整路径
 - `tree --regex` 显示匹配项及其祖先目录（保持上下文）
+
+## 传输恢复
+
+- `upload` / `download` 默认会为当前传输保存恢复状态
+- 传输失败后，错误消息会提示可继续使用的 `transfer_id`
+- 使用 `--resume <transfer_id>` 可以跳过已完成文件，继续剩余上传或下载
+- 使用 `--no-resume` 可以关闭状态持久化
 
 ## 已知边界
 
