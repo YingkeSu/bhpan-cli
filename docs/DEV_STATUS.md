@@ -71,7 +71,7 @@
 ## 已验证行为
 
 - 本地验证通过：
-  - `npm test`（85 个测试全部通过）
+  - `npm test`（102 个测试全部通过）
   - `npm run typecheck`
   - `npm run build`
 - 发布链路验证通过：
@@ -131,14 +131,36 @@ sleep 600 && gh pr view --repo YingkeSu/bhpan-cli --json reviewDecision
 
 - `mv` / `cp` 不支持使用 `-f` 直接覆盖目录；目标是目录时需手动删除。
 - `tree` 对深层目录做全量递归，执行时间较长。
-- 大文件上传/下载的分块传输与真正的字节级断点续传尚未实现；当前恢复粒度是“按文件跳过已完成项”。
+- 大文件上传/下载的分块传输与真正的字节级断点续传尚未实现；当前恢复粒度是"按文件跳过已完成项"。
 - 真实站点上的长时间传输、异常中断恢复仍缺少系统性联调。
+
+## 新增功能
+
+### 传输状态管理 CLI
+
+新增 `transfer` 子命令用于管理传输状态：
+
+```bash
+# 列出所有传输状态
+bhpan transfer list
+bhpan transfer list --status failed
+
+# 查看传输详情
+bhpan transfer show transfer_1234567890_abcdefghi
+
+# 清理旧传输状态
+bhpan transfer clean --older-than 7
+bhpan transfer clean --status failed
+bhpan transfer clean --all
+
+# 删除指定传输状态
+bhpan transfer remove transfer_1234567890_abcdefghi
+```
 
 ## 下一步
 
 1. **完善基础设施**：
    - 将 `transfer-state.ts` 扩展到分块级断点续传，而不是当前的文件级恢复
-   - 为传输状态增加可查询/可清理的 CLI 能力
 2. **增强功能**：
    - 递归目录上传/下载
    - 大文件分块传输

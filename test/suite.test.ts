@@ -1,7 +1,14 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { takeMoveOptions, takeReadOptions, takeRmOptions, takeTransferOptions } from "../src/cli-options.ts";
+import {
+  takeMoveOptions,
+  takeReadOptions,
+  takeRmOptions,
+  takeTransferCleanOptions,
+  takeTransferListOptions,
+  takeTransferOptions,
+} from "../src/cli-options.ts";
 import { completeShellLine, printList } from "../src/shell.ts";
 import { filterTree, calculateStats, type TreeNode } from "../src/tree-format.ts";
 
@@ -72,6 +79,54 @@ describe("cli option parsing", () => {
 
   it("rejects --resume followed by --no-resume", () => {
     assert.throws(() => takeTransferOptions(["--resume", "--no-resume"]), /不能同时指定 --resume 和 --no-resume/);
+  });
+});
+
+describe("transfer list options", () => {
+  it("parses default status as all", () => {
+    const args: string[] = [];
+    const options = takeTransferListOptions(args);
+    assert.deepEqual(options, { status: "all" });
+  });
+
+  it("parses --status flag", () => {
+    const args = ["--status", "failed"];
+    const options = takeTransferListOptions(args);
+    assert.deepEqual(options, { status: "failed" });
+  });
+
+  it("rejects invalid status values", () => {
+    assert.throws(() => takeTransferListOptions(["--status", "invalid"]), /--status 只支持/);
+  });
+});
+
+describe("transfer clean options", () => {
+  it("parses --older-than flag", () => {
+    const args = ["--older-than", "7"];
+    const options = takeTransferCleanOptions(args);
+    assert.deepEqual(options, { olderThanDays: 7, status: undefined, all: false, transferId: undefined });
+  });
+
+  it("parses --status flag for clean", () => {
+    const args = ["--status", "failed"];
+    const options = takeTransferCleanOptions(args);
+    assert.deepEqual(options, { olderThanDays: undefined, status: "failed", all: false, transferId: undefined });
+  });
+
+  it("parses --all flag", () => {
+    const args = ["--all"];
+    const options = takeTransferCleanOptions(args);
+    assert.deepEqual(options, { olderThanDays: undefined, status: undefined, all: true, transferId: undefined });
+  });
+
+  it("parses transfer id as positional argument", () => {
+    const args = ["transfer_123"];
+    const options = takeTransferCleanOptions(args);
+    assert.deepEqual(options, { olderThanDays: undefined, status: undefined, all: false, transferId: "transfer_123" });
+  });
+
+  it("rejects --all with other options", () => {
+    assert.throws(() => takeTransferCleanOptions(["--all", "--older-than", "7"]), /--all 不能与其他选项同时使用/);
   });
 });
 

@@ -150,6 +150,10 @@ bhpan upload <local_path> <remote_dir> [--no-resume]
 bhpan upload --resume <transfer_id>
 bhpan download <remote_path> [local_dir] [--no-resume]
 bhpan download --resume <transfer_id>
+bhpan transfer list [--status all|in_progress|completed|failed]
+bhpan transfer show <transfer_id>
+bhpan transfer clean [--older-than days] [--status failed|completed] [--all]
+bhpan transfer remove <transfer_id>
 ```
 
 完整说明请直接运行：

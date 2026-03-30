@@ -207,3 +207,30 @@ export function takeLinkLimitedTimes(args: string[]): number | undefined {
 export function takeLinkForever(args: string[]): boolean {
   return takeBooleanFlag(args, "--forever");
 }
+
+export type TransferStatus = "all" | "in_progress" | "completed" | "failed";
+
+export function takeTransferListOptions(args: string[]): {
+  status: TransferStatus;
+} {
+  const status = takeEnumFlag(args, "--status", ["all", "in_progress", "completed", "failed"] as const) ?? "all";
+  return { status };
+}
+
+export function takeTransferCleanOptions(args: string[]): {
+  olderThanDays?: number;
+  status?: "failed" | "completed";
+  all: boolean;
+  transferId?: string;
+} {
+  const olderThanDays = takeIntegerFlag(args, "--older-than");
+  const status = takeEnumFlag(args, "--status", ["failed", "completed"] as const);
+  const all = takeBooleanFlag(args, "--all");
+  const transferId = args[0];
+
+  if (all && (olderThanDays !== undefined || status !== undefined || transferId)) {
+    throw new Error("--all 不能与其他选项同时使用");
+  }
+
+  return { olderThanDays, status, all, transferId };
+}
